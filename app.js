@@ -196,7 +196,7 @@ function viewHome() {
              <button class="btn btn-primary btn-sm" data-action="open-settings" data-focus="balance">지금 잔고 입력하기</button>`
           : `<p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(spendText)}">${spendText}</p>
              ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 다음 월급날까지 ${won(-b.spendable)}이 모자라요</span></p>` : ''}
-             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 월급 전 필요한 계획 ${won(b.dueBeforePayday)}</p>
+             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
              ${
                b.balanceAge >= 2
                  ? `<button class="stale-btn" data-action="open-settings" data-focus="balance">${icon('clock')}<span>${b.balanceAge}일 전 잔고 기준 · <b>업데이트</b></span></button>`
@@ -216,6 +216,8 @@ function viewHome() {
           : ''
       }
     </section>
+
+    ${monthsMini(b)}
 
     <section class="card reserve-card">
       <div class="reserve-head">
@@ -251,6 +253,40 @@ function viewHome() {
 
     <a class="btn btn-primary btn-block" href="#/new">${icon('plus')}새 계획 추가</a>
   `;
+}
+
+const RELATIVE = ['이번 달', '다음 달'];
+
+const spendCell = (v) =>
+  v < 0
+    ? `<b class="num neg">${icon('alertOctagon')}부족 ${won(-v)}</b>`
+    : `<b class="num accent">${won(v)}</b>`;
+
+function monthsMini(b) {
+  if (!b.salary && b.spendable === null) return '';
+  return `
+    <section class="card">
+      <div class="section-head tight">
+        <h2>달별 계획</h2>
+        <a class="link" href="#/calendar">월별 전망${icon('chevronRight')}</a>
+      </div>
+      <ul class="month-mini">
+        <li class="mm-head" aria-hidden="true"><span></span><span>모을 돈</span><span>쓸 수 있는 돈</span></li>
+        ${b.months
+          .slice(0, 3)
+          .map(
+            (m) => `<li>
+              <span class="mm-label">${m.label}${RELATIVE[m.k] ? `<small>${RELATIVE[m.k]}</small>` : ''}</span>
+              <span class="num"><span class="sr-only">모을 돈 </span>${won(m.reserve)}</span>
+              <span><span class="sr-only">쓸 수 있는 돈 </span>${spendCell(m.spend)}</span>
+            </li>`,
+          )
+          .join('')}
+      </ul>
+      <p class="card-sub small-note">쓸 수 있는 돈은 생활비를 포함한 금액이에요. ${
+        b.spendable === null ? '' : '이번 달은 잔고 기준, '
+      }다음 달부터는 월급 기준 예상이에요.</p>
+    </section>`;
 }
 
 function appMark() {
@@ -429,14 +465,68 @@ function planCard(p) {
 // ---------- 달력 (준비 중) ----------
 
 function viewCalendar() {
+  const b = C.monthBudget(state, today());
   $app.innerHTML = `
-    <header class="topbar"><h1 class="page-title">달력</h1></header>
-    <div class="card empty soon">
-      <span class="round-ic big" aria-hidden="true">${icon('sparkCalendar')}</span>
-      <p>달력은 준비 중이에요</p>
-      <p class="card-sub">다가오는 큰 지출을 날짜별로 볼 수 있게 만들고 있어요. 지금은 계획 탭에서 날짜순으로 볼 수 있어요.</p>
-      <a class="btn btn-ghost" href="#/plans">계획 보러 가기</a>
-    </div>`;
+    <header class="topbar">
+      <div>
+        <h1 class="page-title">월별 전망</h1>
+        <p class="brand-sub">달마다 모을 돈과 쓸 수 있는 돈 (생활비 포함)</p>
+      </div>
+    </header>
+    ${b.months.map((m) => monthCard(m, b)).join('')}
+    <p class="hero-note">${icon('info')}<span>계좌 잔액이 아닌 <b>예상</b>이에요. ${
+      b.spendable === null ? '' : '이번 달은 입력한 잔고, '
+    }다음 달부터는 월급 − 고정지출 − 적금 기준이에요. 계획이나 설정을 바꾸면 바로 다시 계산돼요.</span></p>
+  `;
+}
+
+function monthCard(m, b) {
+  const balanceMonth = m.k === 0 && b.spendable !== null;
+  return `
+    <section class="card month-card ${m.k === 0 ? 'current' : ''}">
+      <div class="mc-head">
+        <h2>${m.label}${RELATIVE[m.k] ? ` <span class="mc-rel">${RELATIVE[m.k]}</span>` : ''}</h2>
+        <span class="muted small num">${shortDate(m.start)} – ${shortDate(m.end)}</span>
+      </div>
+      <div class="mc-grid">
+        <div><p class="pv-label">모을 돈</p><p class="pv-value num">${won(m.reserve)}</p></div>
+        <div><p class="pv-label">쓸 수 있는 돈</p><p class="pv-value">${spendCell(m.spend)}</p></div>
+      </div>
+      <p class="pv-note num">${
+        balanceMonth
+          ? `잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 모을 돈${m.shortfall ? ' − 부족' : ''}`
+          : m.extra === 0
+            ? `생활비 ${won(b.living)}만큼 쓸 수 있어요`
+            : m.extra > 0
+            ? `생활비 ${won(b.living)}을 쓰고도 ${won(m.extra)} 더 남아요`
+            : `생활비 ${won(b.living)}보다 ${won(-m.extra)} 적어요`
+      }</p>
+      ${
+        m.allocs.length
+          ? `<div class="mc-list"><p class="mc-list-title">모으기</p><ul>${m.allocs
+              .map(
+                (a) =>
+                  `<li><button class="mc-item" data-action="open-plan" data-id="${esc(a.id)}"><span>${esc(a.name)}</span><b class="num">${won(a.amount)}</b></button></li>`,
+              )
+              .join('')}</ul></div>`
+          : ''
+      }
+      ${
+        m.dues.length
+          ? `<div class="mc-list"><p class="mc-list-title">지출 예정</p><ul>${m.dues
+              .map(
+                (d) =>
+                  `<li><button class="mc-item" data-action="open-plan" data-id="${esc(d.id)}"><span>${esc(d.name)}</span><b class="num">${won(d.amount)}</b></button>${
+                    d.shortfall
+                      ? `<span class="short-line">${icon('alertOctagon')}<span><b>부족</b> · ${won(d.shortfall)}을 못 모아요</span></span>`
+                      : ''
+                  }</li>`,
+              )
+              .join('')}</ul></div>`
+          : ''
+      }
+      ${!m.allocs.length && !m.dues.length ? '<p class="muted small">모을 돈도 나갈 큰 지출도 없어요.</p>' : ''}
+    </section>`;
 }
 
 // ---------- 새 계획 추가 / 수정 ----------

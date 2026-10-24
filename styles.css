@@ -1716,3 +1716,135 @@ select.input {
   border-radius: var(--r-md);
   background: var(--accent-soft);
 }
+
+/* ---------- 달별 계획 / 월별 전망 ---------- */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.month-mini {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.month-mini li {
+  display: grid;
+  grid-template-columns: 4.8em 1fr 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+  text-align: right;
+}
+
+.month-mini li.mm-head {
+  border-top: 0;
+  padding: 0 0 4px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.mm-label {
+  text-align: left;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.mm-label small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.month-mini b,
+.mc-grid b {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.month-mini .ic,
+.mc-grid .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.small-note {
+  font-size: 12px;
+}
+
+.month-card.current {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.mc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mc-head h2 {
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.mc-rel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.mc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  background: var(--bg);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+
+.mc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-list-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.mc-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mc-item {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  text-align: left;
+}
+
+.month-mini li > span:last-child b {
+  white-space: nowrap;
+  font-size: 14px;
+}

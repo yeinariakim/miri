@@ -339,7 +339,7 @@ test('뒤 달이 모자라면 기한 전 여유 있는 달에 더 넣는다', ()
   assert.equal(b.plans[0].shortfall, 0);
 });
 
-test('다음 월급날까지 쓸 수 있는 돈 = 잔고 - 나갈 돈 - 월급 전에 필요한 계획의 미확보 금액', () => {
+test('다음 월급날까지 쓸 수 있는 돈 = 잔고 - 나갈 돈 - 이번 달에 모을 돈', () => {
   const today = '2026-10-28';
   const s = withBalance(900000, { pendingOut: 250000, balanceUpdatedAt: '2026-10-25' });
   const b = monthBudget(
@@ -354,7 +354,9 @@ test('다음 월급날까지 쓸 수 있는 돈 = 잔고 - 나갈 돈 - 월급 �
     today,
   );
   assert.equal(b.dueBeforePayday, 200000);
-  assert.equal(b.spendable, 900000 - 250000 - 200000);
+  // 이번 달에 later 몫(500,000 / 3회 = 166,667)도 떼어 두므로 같이 뺀다
+  assert.equal(b.months[0].reserve, 200000 + 166667);
+  assert.equal(b.spendable, 900000 - 250000 - 200000 - 166667);
   assert.equal(b.balanceAge, 3);
 
   const neg = monthBudget({ settings: withBalance(100000), plans: [plan('soon', 300000, '2026-11-20')] }, today);
@@ -371,4 +373,45 @@ test('미리보기에 월별 준비 일정과 부족액이 나온다', () => {
   assert.deepEqual(pv.schedule.map((x) => `${x.label} ${x.amount}`), ['10월 0', '11월 200000', '12월 100000']);
   assert.equal(pv.monthly, 0);
   assert.equal(pv.shortfall, 0);
+});
+
+test('월별 전망: 이번 달 돈이 없으면 다음 달에 모을 돈과 쓸 수 있는 돈이 나온다', () => {
+  const today = '2026-10-24';
+  const b = monthBudget({ settings: withBalance(50000), plans: [plan('a', 300000, '2026-12-10')] }, today);
+  assert.equal(b.months.length, 6); // 최소 6개월
+  const [oct, nov, dec, jan] = b.months;
+  assert.deepEqual([oct.label, nov.label, dec.label, jan.label], ['10월', '11월', '12월', '1월']);
+  assert.deepEqual([oct.start, oct.end], ['2026-09-25', '2026-10-24']);
+
+  // 이번 달: 잔고 50,000을 다 모으면 쓸 수 있는 돈 0
+  assert.equal(oct.reserve, 50000);
+  assert.equal(oct.spend, 0);
+  assert.equal(oct.extra, null);
+  // 다음 달: 남은 몫 + 이번 달에서 넘어온 50,000 = 150,000
+  assert.equal(nov.reserve, 150000);
+  assert.equal(nov.spend, 3000000 - 600000 - 500000 - 150000); // 생활비 포함
+  assert.equal(nov.extra, nov.spend - 1200000); // 생활비 말고 더 남는 돈
+  assert.deepEqual(nov.allocs, [{ id: 'a', name: 'a', amount: 150000 }]);
+  // 12/10에 쓰는 계획은 12월(11/25 ~ 12/24)에 지출 예정
+  assert.deepEqual(dec.dues, [{ id: 'a', name: 'a', amount: 300000, shortfall: 0 }]);
+  assert.equal(dec.reserve, 100000);
+  assert.equal(jan.reserve, 0);
+  assert.equal(jan.spend, 1900000);
+});
+
+test('월별 전망: 기한인 달에 못 채운 금액은 그 달 쓸 수 있는 돈에서 빠진다', () => {
+  const today = '2026-10-26';
+  const s = withBalance(0, { living: 1800000 }); // 매달 100,000
+  const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')] }, today);
+  const [, nov] = b.months;
+  assert.equal(nov.reserve, 100000);
+  assert.equal(nov.shortfall, 200000);
+  assert.equal(nov.spend, 3000000 - 600000 - 500000 - 100000 - 200000);
+});
+
+test('월별 전망: 잔고를 넣은 적 없으면 이번 달도 월급 기준', () => {
+  const b = monthBudget({ settings, plans: [plan('a', 300000, '2026-12-10')] }, '2026-10-26');
+  assert.equal(b.months[0].reserve, 150000);
+  assert.equal(b.months[0].spend, 3000000 - 600000 - 500000 - 150000);
+  assert.equal(b.spendable, null);
 });

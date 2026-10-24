@@ -308,6 +308,7 @@ export function monthBudget(state, today) {
   const shortfall = plans.reduce((sum, p) => sum + p.shortfall, 0);
   const dueBeforePayday = plans.filter((p) => p.count === 1).reduce((sum, p) => sum + p.remaining, 0);
   const balanceSet = hasBalance(s);
+  const months = monthlyOutlook(s, plans, starts, balanceSet);
   return {
     period,
     salary: s.salary,
@@ -324,10 +325,52 @@ export function monthBudget(state, today) {
     pendingOut: s.pendingOut || 0,
     balanceAge: balanceSet ? daysBetween(s.balanceUpdatedAt, today) : null,
     dueBeforePayday,
-    // 다음 월급날까지 쓸 수 있는 돈
-    spendable: balanceSet ? s.balance - (s.pendingOut || 0) - dueBeforePayday : null,
+    // 다음 월급날까지 쓸 수 있는 돈 = 잔고 - 나갈 돈 - 이번 달에 모을 돈 - 월급 전에 못 채운 금액
+    spendable: balanceSet ? months[0].spend : null,
+    months,
     plans,
   };
+}
+
+// 월별 전망: 월급 주기마다 모을 돈과 쓸 수 있는 돈.
+// 쓸 수 있는 돈은 생활비를 포함한 금액이다.
+//   이번 달 = 잔고 - 아직 나갈 돈 - 이번 달에 모을 돈 - 이번 달이 기한인데 못 채운 금액
+//   다음 달부터 = 월급 - 고정지출 - 적금 - 그 달에 모을 돈 - 그 달이 기한인데 못 채운 금액
+// 잔고를 넣은 적이 없으면 이번 달도 월급 기준으로 계산한다.
+export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(settings)) {
+  const n = Math.max(6, starts.length);
+  const all = [...starts];
+  while (all.length < n + 1) {
+    const { y, m } = parseDate(all[all.length - 1]);
+    const t = shiftMonth(y, m, 1);
+    all.push(paydayIn(t.y, t.m, settings.payday));
+  }
+  const base = settings.salary - fixedTotal(settings) - settings.savings;
+  return Array.from({ length: n }, (_, k) => {
+    const allocs = plans
+      .filter((p) => (p.schedule[k]?.amount || 0) > 0)
+      .map((p) => ({ id: p.id, name: p.name, amount: p.schedule[k].amount }));
+    const dues = plans
+      .filter((p) => p.count - 1 === k)
+      .map((p) => ({ id: p.id, name: p.name, amount: p.amount, shortfall: p.shortfall }));
+    const reserve = allocs.reduce((sum, a) => sum + a.amount, 0);
+    const shortfall = dues.reduce((sum, d) => sum + d.shortfall, 0);
+    const income = k === 0 && balanceSet ? settings.balance - (settings.pendingOut || 0) : base;
+    const spend = income - reserve - shortfall;
+    return {
+      k,
+      start: all[k],
+      end: addDays(all[k + 1], -1),
+      label: periodLabel(all[k]),
+      reserve,
+      spend,
+      // 생활비 예산 말고 더 남는 돈 (월급 기준인 달만)
+      extra: k === 0 && balanceSet ? null : spend - settings.living,
+      allocs,
+      dues,
+      shortfall,
+    };
+  });
 }
 
 // 추가/수정 화면 미리보기: 이 계획을 넣으면 여유 예산과 배분이 어떻게 바뀌는지
