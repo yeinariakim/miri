@@ -8,6 +8,9 @@ const $sheetRoot = document.getElementById('sheet-root');
 const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
+// 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
+const VERSION = '2026.10.25-1';
+
 const today = () => C.todayStr();
 
 let state = S.load();
@@ -1081,7 +1084,7 @@ function settingsSheetHTML() {
           : `<p class="field-hint">예시 데이터가 없어요.</p>`
       }
     </section>
-    <p class="muted small center">미리 · 서버 없이 이 기기에서만 동작해요</p>`;
+    <p class="muted small center">미리 · 버전 ${VERSION} · 서버 없이 이 기기에서만 동작해요</p>`;
 }
 
 function bindSettingsSheet(body) {
@@ -1251,7 +1254,23 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  // 새 버전이 올라오면 바로 받아서 한 번 새로고침한다 (홈 화면 앱이 옛 화면에 머물지 않게)
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    const r = parseRoute();
+    if (!hadController || reloaded || r.name === 'new' || r.name === 'edit') return;
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker
+    .register('./sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch(() => {});
 }
 
 render();
