@@ -205,17 +205,26 @@ export function planStatus(p) {
 
 // ---------- 예산 ----------
 
+// 고정지출은 항목(넷플릭스, 휴대폰 요금 …)의 합계. 예전 형식(합계 하나)도 받아 준다.
+export function fixedTotal(settings) {
+  if (Array.isArray(settings.fixedItems)) {
+    return settings.fixedItems.reduce((sum, it) => sum + (it.amount || 0), 0);
+  }
+  return settings.fixed || 0;
+}
+
 export function monthBudget(state, today) {
   const s = state.settings;
   const period = currentPeriod(today, s.payday);
   const plans = state.plans.filter(isActive).map((p) => planMonth(p, s, today));
   const reserve = plans.reduce((sum, p) => sum + p.monthlyNeed, 0);
   const reserveLeft = plans.reduce((sum, p) => sum + p.thisMonthLeft, 0);
-  const free = s.salary - s.fixed - s.savings - s.living - reserve;
+  const fixed = fixedTotal(s);
+  const free = s.salary - fixed - s.savings - s.living - reserve;
   return {
     period,
     salary: s.salary,
-    fixed: s.fixed,
+    fixed,
     savings: s.savings,
     living: s.living,
     reserve,

@@ -53,7 +53,7 @@ function normalizeState(data) {
   const settings = {
     salary: int(s.salary),
     payday: Math.min(31, Math.max(1, int(s.payday, 1))),
-    fixed: int(s.fixed),
+    fixedItems: normalizeFixedItems(s),
     savings: int(s.savings),
     living: int(s.living),
   };
@@ -84,10 +84,33 @@ function normalizeState(data) {
   return { version: 1, settings, plans };
 }
 
+// 고정지출 항목. 예전 형식(합계 하나)이면 '고정지출' 항목 하나로 옮긴다.
+function normalizeFixedItems(s) {
+  if (!Array.isArray(s.fixedItems)) {
+    const total = int(s.fixed);
+    return total ? [{ id: newId(), name: '고정지출', amount: total }] : [];
+  }
+  return s.fixedItems
+    .filter((it) => it && int(it.amount) > 0)
+    .map((it) => ({
+      id: String(it.id || newId()),
+      name: String(it.name || '').trim().slice(0, 30) || '이름 없는 항목',
+      amount: int(it.amount),
+      ...(it.sample ? { sample: true } : {}),
+    }));
+}
+
 // ---------- 예시 데이터 ----------
 
 export function createSampleState(today) {
-  const settings = { salary: 3200000, payday: 25, fixed: 680000, savings: 500000, living: 1200000 };
+  const fixedItems = [
+    ['월세', 450000],
+    ['휴대폰 요금', 59000],
+    ['보험', 80000],
+    ['넷플릭스', 13500],
+    ['스포티파이', 10900],
+  ].map(([name, amount]) => ({ id: newId(), name, amount, sample: true }));
+  const settings = { salary: 3200000, payday: 25, fixedItems, savings: 500000, living: 1200000 };
   const { y } = parseDate(today);
   const yearEnd = `${y}-12-20` > addDays(today, 14) ? `${y}-12-20` : `${y + 1}-12-20`;
   const samples = [
@@ -120,9 +143,13 @@ export function createSampleState(today) {
 }
 
 export function hasSample(state) {
-  return state.plans.some((p) => p.sample);
+  return state.plans.some((p) => p.sample) || state.settings.fixedItems.some((it) => it.sample);
 }
 
 export function clearSample(state) {
-  return { ...state, plans: state.plans.filter((p) => !p.sample) };
+  return {
+    ...state,
+    settings: { ...state.settings, fixedItems: state.settings.fixedItems.filter((it) => !it.sample) },
+    plans: state.plans.filter((p) => !p.sample),
+  };
 }

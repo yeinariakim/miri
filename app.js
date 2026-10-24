@@ -235,7 +235,7 @@ function appMark() {
 function splitCard(b) {
   if (!b.salary) return '';
   const segs = [
-    { key: 'fixed', label: '고정지출', v: b.fixed },
+    { key: 'fixed', label: `고정지출${state.settings.fixedItems.length ? ` · ${state.settings.fixedItems.length}개` : ''}`, v: b.fixed },
     { key: 'savings', label: '적금', v: b.savings },
     { key: 'living', label: '생활비', v: b.living },
     { key: 'reserve', label: '준비금', v: b.reserve },
@@ -881,6 +881,7 @@ function bindPlanSheet(body, id) {
 function settingsSheetHTML() {
   const s = state.settings;
   const sampleCount = state.plans.filter((p) => p.sample).length;
+  const sampleFixed = s.fixedItems.filter((it) => it.sample).length;
   return `
     <div class="sheet-head">
       <div class="sheet-title-wrap"><h2 id="sheet-title" class="sheet-title">설정</h2></div>
@@ -901,11 +902,12 @@ function settingsSheetHTML() {
         </select>
         <span class="field-hint">한 달 = 월급날부터 다음 월급 전날까지. 29~31일은 그 날이 없는 달엔 말일로 계산해요.</span>
       </label>
-      <div class="field">
-        <label class="field-label" for="fixed">고정지출 합계</label>
-        ${moneyField('fixed', s.fixed)}
-        <span class="field-hint">월세, 통신비, 보험, 구독처럼 매달 나가는 돈의 합계</span>
-      </div>
+      <fieldset class="field">
+        <legend class="field-label fixed-head">고정지출 <span class="num" id="fixed-total"></span></legend>
+        <span class="field-hint">월세, 휴대폰 요금, 보험, 구독처럼 매달 나가는 돈을 항목별로 적어요. 1년에 한 번 내는 돈은 계획으로 등록하세요.</span>
+        <div class="fixed-list" id="fixed-list"></div>
+        <div class="quick" id="fixed-presets"></div>
+      </fieldset>
       <div class="field">
         <label class="field-label" for="savings">적금</label>
         ${moneyField('savings', s.savings)}
@@ -931,8 +933,8 @@ function settingsSheetHTML() {
     <section class="settings-section">
       <h3 class="sub-title">예시 데이터</h3>
       ${
-        sampleCount
-          ? `<p class="field-hint">처음 둘러보기용 예시 계획이 ${sampleCount}개 있어요. 직접 만든 계획은 그대로 남아요.</p>
+        S.hasSample(state)
+          ? `<p class="field-hint">처음 둘러보기용 예시 ${[sampleCount && `계획 ${sampleCount}개`, sampleFixed && `고정지출 ${sampleFixed}개`].filter(Boolean).join('와 ')}가 있어요. 직접 넣은 것은 그대로 남아요.</p>
              <button type="button" class="btn btn-danger-ghost btn-block" data-action="clear-sample">${icon('trash')}<span>예시 데이터 지우기</span></button>`
           : `<p class="field-hint">예시 데이터가 없어요.</p>`
       }
@@ -942,13 +944,69 @@ function settingsSheetHTML() {
 
 function bindSettingsSheet(body) {
   const form = body.querySelector('#settings-form');
-  const vals = { ...state.settings };
+  const vals = { ...state.settings, fixedItems: state.settings.fixedItems.map((it) => ({ ...it })) };
   const $sum = body.querySelector('#settings-sum');
+  const $fixedList = body.querySelector('#fixed-list');
+  const $presets = body.querySelector('#fixed-presets');
+  const $fixedTotal = body.querySelector('#fixed-total');
+  const PRESETS = ['넷플릭스', '스포티파이', '유튜브 프리미엄', '휴대폰 요금', '인터넷', '월세', '관리비', '보험'];
+
   const updateSum = () => {
-    const left = vals.salary - vals.fixed - vals.savings - vals.living;
+    const fixed = C.fixedTotal(vals);
+    $fixedTotal.textContent = `합계 ${won(fixed)}`;
+    const left = vals.salary - fixed - vals.savings - vals.living;
     $sum.innerHTML = `준비금을 빼기 전 남는 돈 <b class="num ${left < 0 ? 'neg' : ''}">${won(left)}</b>`;
   };
-  for (const key of ['salary', 'fixed', 'savings', 'living']) {
+
+  function renderFixed(focus) {
+    $fixedList.innerHTML = vals.fixedItems.length
+      ? vals.fixedItems
+          .map(
+            (it) => `
+        <div class="fixed-row" data-fid="${esc(it.id)}">
+          <input class="input fixed-name" maxlength="30" placeholder="이름" aria-label="항목 이름" value="${esc(it.name)}">
+          <span class="money-input"><input class="fixed-amt" inputmode="numeric" placeholder="0" aria-label="${esc(it.name || '항목')} 금액" value="${it.amount ? C.formatWon(it.amount) : ''}"><span class="unit">원</span></span>
+          <button type="button" class="icon-btn fixed-del" data-fixed-del aria-label="${esc(it.name || '항목')} 삭제">${icon('x')}</button>
+        </div>`,
+          )
+          .join('')
+      : '<p class="field-hint">아직 항목이 없어요. 아래에서 골라 추가하세요.</p>';
+    for (const row of $fixedList.querySelectorAll('.fixed-row')) {
+      const it = vals.fixedItems.find((x) => x.id === row.dataset.fid);
+      row.querySelector('.fixed-name').addEventListener('input', (e) => (it.name = e.target.value));
+      bindMoney(row.querySelector('.fixed-amt'), (v) => {
+        it.amount = v;
+        updateSum();
+      });
+    }
+    const names = new Set(vals.fixedItems.map((it) => it.name.trim()));
+    $presets.innerHTML =
+      PRESETS.filter((n) => !names.has(n))
+        .map((n) => `<button type="button" class="chip-btn" data-fixed-add="${n}">+ ${n}</button>`)
+        .join('') + `<button type="button" class="chip-btn ghost" data-fixed-add="">+ 직접 입력</button>`;
+    if (focus) {
+      const row = $fixedList.querySelector(`[data-fid="${focus.id}"]`);
+      row?.querySelector(focus.field).focus();
+    }
+    updateSum();
+  }
+
+  body.querySelector('#settings-form').addEventListener('click', (e) => {
+    const add = e.target.closest('[data-fixed-add]');
+    const del = e.target.closest('[data-fixed-del]');
+    if (add) {
+      const it = { id: S.newId(), name: add.dataset.fixedAdd, amount: 0 };
+      vals.fixedItems.push(it);
+      renderFixed({ id: it.id, field: it.name ? '.fixed-amt' : '.fixed-name' });
+    } else if (del) {
+      const id = del.closest('.fixed-row').dataset.fid;
+      vals.fixedItems = vals.fixedItems.filter((it) => it.id !== id);
+      renderFixed();
+    }
+  });
+  renderFixed();
+
+  for (const key of ['salary', 'savings', 'living']) {
     bindMoney(form.querySelector(`#${key}`), (v) => {
       vals[key] = v;
       updateSum();
@@ -959,7 +1017,10 @@ function bindSettingsSheet(body) {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    commit({ ...state, settings: { ...vals, payday: Number(form.payday.value) } });
+    const fixedItems = vals.fixedItems
+      .filter((it) => it.amount > 0)
+      .map((it) => ({ ...it, name: it.name.trim() || '이름 없는 항목' }));
+    commit({ ...state, settings: { ...vals, fixedItems, payday: Number(form.payday.value) } });
     toast('설정을 저장했어요');
   });
 

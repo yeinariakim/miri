@@ -1563,3 +1563,55 @@ select.input {
 .closed-note .btn {
   align-self: flex-start;
 }
+
+/* ---------- 고정지출 항목 ---------- */
+
+.fixed-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  gap: 8px;
+}
+
+.fixed-head .num {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.fixed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fixed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
+  gap: 6px;
+  align-items: center;
+}
+
+.fixed-row .input,
+.fixed-row .money-input {
+  min-height: 46px;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.fixed-row .money-input input {
+  font-size: 16px;
+  padding: 8px 0;
+}
+
+.fixed-del {
+  width: 40px;
+  height: 40px;
+  border-color: transparent;
+  color: var(--ink-2);
+}
+
+.fixed-del .ic {
+  width: 18px;
+  height: 18px;
+}

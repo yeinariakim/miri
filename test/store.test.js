@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthBudget } from '../calc.js';
-import { clearSample, createSampleState, exportJSON, importJSON } from '../store.js';
+import { fixedTotal, monthBudget } from '../calc.js';
+import { clearSample, createSampleState, exportJSON, hasSample, importJSON } from '../store.js';
 
 const today = '2026-10-24';
 
@@ -31,7 +31,7 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
       ],
     }),
   );
-  assert.deepEqual(s.settings, { salary: 3000000, payday: 31, fixed: 0, savings: 2, living: 0 });
+  assert.deepEqual(s.settings, { salary: 3000000, payday: 31, fixedItems: [], savings: 2, living: 0 });
   assert.equal(s.plans.length, 1);
   assert.equal(s.plans[0].importance, 'flex');
   assert.equal(s.plans[0].stage, 'active');
@@ -44,6 +44,41 @@ test('예시 데이터: 5개 계획, 지우면 직접 만든 계획만 남는다
     ['엄마 생신', '친구 결혼식', '연말 선물', '제주 여행', '노트북 교체'],
   );
   const mine = { id: 'mine', name: '내 계획', amount: 1000, dueDate: '2026-12-01', history: [] };
-  const cleared = clearSample({ ...state, plans: [...state.plans, mine] });
+  const myFixed = { id: 'f', name: '내 구독', amount: 9900 };
+  const cleared = clearSample({
+    settings: { ...state.settings, fixedItems: [...state.settings.fixedItems, myFixed] },
+    plans: [...state.plans, mine],
+  });
   assert.deepEqual(cleared.plans.map((p) => p.id), ['mine']);
+  assert.deepEqual(cleared.settings.fixedItems, [myFixed]);
+  assert.equal(hasSample(cleared), false);
+});
+
+test('고정지출 항목: 합계로 계산되고, 예전 합계 하나짜리 데이터는 항목 하나로 옮겨진다', () => {
+  const s = importJSON(
+    JSON.stringify({
+      settings: {
+        salary: 3000000,
+        payday: 25,
+        fixedItems: [
+          { id: 'n', name: '넷플릭스', amount: 13500 },
+          { id: 's', name: ' 스포티파이 ', amount: 10900 },
+          { id: 'p', name: '', amount: 59000 },
+          { id: 'z', name: '빈 항목', amount: 0 },
+        ],
+        savings: 0,
+        living: 0,
+      },
+      plans: [],
+    }),
+  );
+  assert.deepEqual(s.settings.fixedItems.map((it) => it.name), ['넷플릭스', '스포티파이', '이름 없는 항목']);
+  assert.equal(fixedTotal(s.settings), 83400);
+  assert.equal(monthBudget(s, today).free, 3000000 - 83400);
+
+  const old = importJSON(JSON.stringify({ settings: { salary: 1, payday: 25, fixed: 680000 }, plans: [] }));
+  assert.equal(old.settings.fixedItems.length, 1);
+  assert.equal(old.settings.fixedItems[0].name, '고정지출');
+  assert.equal(fixedTotal(old.settings), 680000);
+  assert.equal('fixed' in old.settings, false);
 });
