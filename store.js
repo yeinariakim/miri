@@ -1,5 +1,5 @@
 // 미리 — 저장 (localStorage) / 백업 / 예시 데이터
-import { CATEGORIES, IMPORTANCE, addDays, addMonths, isValidDate, parseDate, planMonth } from './calc.js';
+import { CATEGORIES, IMPORTANCE, STAGES, addDays, addMonths, isValidDate, parseDate, planMonth } from './calc.js';
 
 const KEY = 'miri:v1';
 
@@ -66,6 +66,8 @@ function normalizeState(data) {
       amount: int(p.amount),
       dueDate: p.dueDate,
       importance: p.importance in IMPORTANCE ? p.importance : 'flex',
+      stage: p.stage in STAGES ? p.stage : 'active',
+      notes: typeof p.notes === 'string' ? p.notes.slice(0, 200) : '',
       createdAt: typeof p.createdAt === 'string' ? p.createdAt : new Date().toISOString(),
       baselineMonthly: int(p.baselineMonthly),
       ...(p.sample ? { sample: true } : {}),
@@ -104,6 +106,8 @@ export function createSampleState(today) {
       amount,
       dueDate,
       importance,
+      stage: 'active',
+      notes: '',
       createdAt: now,
       baselineMonthly: 0,
       sample: true,

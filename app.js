@@ -51,11 +51,16 @@ const STATUS = {
   ok: { label: '순조로움', icon: 'checkCircle' },
   warn: { label: '주의', icon: 'alertTriangle' },
   short: { label: '부족', icon: 'alertOctagon' },
-  done: { label: '완료', icon: 'check' },
+  done: { label: '다 모음', icon: 'check' },
 };
 
 const statusBadge = (s) =>
   `<span class="status status-${s}">${icon(STATUS[s].icon)}<span>${STATUS[s].label}</span></span>`;
+
+const stageBadge = (stage) =>
+  `<span class="status status-closed">${icon(stage === 'spent' ? 'check' : 'x')}<span>${C.STAGES[stage]}</span></span>`;
+
+const badgeOf = (p) => (C.isActive(p) ? statusBadge(p.status) : stageBadge(p.stage));
 
 const importanceTag = (imp) => `<span class="tag tag-${imp}">${C.IMPORTANCE[imp]}</span>`;
 
@@ -316,9 +321,11 @@ function upcomingRow(p) {
         <span class="row-main">
           <span class="row-title">${esc(p.name)}</span>
           <span class="row-sub num">${dateLabel(p.dueDate)} · <b>${ddayLabel(p.dday)}</b></span>
+          <span class="row-sub num">${won(p.saved)} / ${won(p.amount)}</span>
+          ${progressBar(p)}
         </span>
         <span class="row-end">
-          <span class="row-amount num">${won(p.monthlyNeed)}</span>
+          <span class="row-amount num"><span class="row-amount-label">이번 달</span>${won(p.monthlyNeed)}</span>
           ${statusBadge(p.status)}
         </span>
       </button>
@@ -329,21 +336,24 @@ function upcomingRow(p) {
 
 function viewPlans() {
   const b = C.monthBudget(state, today());
-  const active = b.plans.filter((p) => p.status !== 'done').sort(byDue);
-  const done = b.plans.filter((p) => p.status === 'done').sort(byDue);
+  const active = [...b.plans].sort((a, c) => (a.status === 'done') - (c.status === 'done') || byDue(a, c));
+  const closed = state.plans
+    .filter((p) => !C.isActive(p))
+    .map((p) => C.planMonth(p, state.settings, today()))
+    .sort((a, c) => byDue(c, a));
 
   $app.innerHTML = `
     <header class="topbar">
       <div>
         <h1 class="page-title">계획</h1>
-        <p class="brand-sub">${state.plans.length}개 · 이번 달 준비금 <b class="num">${won(b.reserve)}</b></p>
+        <p class="brand-sub">준비 중 ${active.length}개 · 이번 달 준비금 <b class="num">${won(b.reserve)}</b></p>
       </div>
       <a class="icon-btn accent-btn" href="#/new" aria-label="새 계획 추가">${icon('plus')}</a>
     </header>
     ${
       state.plans.length
-        ? `<ul class="plan-list">${active.map(planCard).join('')}</ul>
-           ${done.length ? `<h2 class="group-title">다 모은 계획</h2><ul class="plan-list">${done.map(planCard).join('')}</ul>` : ''}`
+        ? `${active.length ? `<ul class="plan-list">${active.map(planCard).join('')}</ul>` : '<div class="card empty"><p>준비 중인 계획이 없어요.</p></div>'}
+           ${closed.length ? `<h2 class="group-title">끝난 계획 <span class="muted">· 계산에서 빠져요</span></h2><ul class="plan-list">${closed.map(planCard).join('')}</ul>` : ''}`
         : `<div class="card empty">
              <p>아직 계획이 없어요.</p>
              <p class="card-sub">미리 알고 있는 큰 지출을 등록하면 매달 얼마씩 모으면 되는지 알려 드려요.</p>
@@ -356,14 +366,14 @@ function viewPlans() {
 function planCard(p) {
   return `
     <li>
-      <button class="plan-card" data-action="open-plan" data-id="${esc(p.id)}">
+      <button class="plan-card ${C.isActive(p) ? '' : 'closed'}" data-action="open-plan" data-id="${esc(p.id)}">
         <span class="pc-top">
           ${catIcon(p.category)}
           <span class="pc-title">
             <span class="pc-name">${esc(p.name)}</span>
             <span class="tags"><span class="tag">${esc(p.category)}</span>${importanceTag(p.importance)}</span>
           </span>
-          ${statusBadge(p.status)}
+          ${badgeOf(p)}
         </span>
         <span class="pc-date num">${icon('calendar')}${dateLabel(p.dueDate, { year: true })}<b class="dday">${ddayLabel(p.dday)}</b></span>
         <span class="pc-amounts">
@@ -372,8 +382,13 @@ function planCard(p) {
         </span>
         ${progressBar(p)}
         <span class="pc-foot">
-          <span class="muted">${p.status === 'done' ? '목표 금액을 다 모았어요' : `이번 달 추천 확보액 · 이번 달 포함 ${p.count}회`}</span>
-          ${p.status === 'done' ? '' : `<b class="num accent">${won(p.monthlyNeed)}</b>`}
+          ${
+            !C.isActive(p)
+              ? `<span class="muted">${p.stage === 'spent' ? '지출을 마친 계획이에요' : '취소한 계획이에요'}</span>`
+              : p.status === 'done'
+                ? '<span class="muted">목표 금액을 다 모았어요</span>'
+                : `<span class="muted">이번 달 추천 확보액 · 이번 달 포함 ${p.count}회</span><b class="num accent">${won(p.monthlyNeed)}</b>`
+          }
         </span>
       </button>
     </li>`;
@@ -409,9 +424,10 @@ function viewForm(r) {
         amount: editing.amount,
         dueDate: editing.dueDate,
         importance: editing.importance,
+        notes: editing.notes || '',
         saved: 0,
       }
-    : { name: '', category: '선물', amount: 0, dueDate: '', importance: 'flex', saved: 0 };
+    : { name: '', category: '선물', amount: 0, dueDate: '', importance: 'flex', notes: '', saved: 0 };
   const back = editing ? '#/plans' : '#/';
 
   const IMP_DESC = { must: '그 날짜에 꼭 필요해요', flex: '날짜나 금액을 바꿀 수 있어요', wish: '있으면 좋은 계획이에요' };
@@ -475,6 +491,13 @@ function viewForm(r) {
         }
       </div>
 
+      <div class="card form-card">
+        <label class="field">
+          <span class="field-label">메모 <span class="muted">(선택)</span></span>
+          <textarea class="input textarea" name="notes" maxlength="200" rows="2" placeholder="예: 꽃다발 + 식사, 가족이랑 나눠서 내기">${esc(draft.notes)}</textarea>
+        </label>
+      </div>
+
       <section class="preview" id="preview" aria-live="polite"></section>
 
       <div class="form-actions">
@@ -502,6 +525,7 @@ function viewForm(r) {
     amount: draft.amount,
     dueDate: draft.dueDate,
     importance: draft.importance,
+    stage: editing ? editing.stage : 'active',
     baselineMonthly: 0,
     history: editing
       ? editing.history
@@ -562,6 +586,7 @@ function viewForm(r) {
     const el = e.target;
     if (el.name === 'name') draft.name = el.value;
     else if (el.name === 'dueDate') draft.dueDate = el.value;
+    else if (el.name === 'notes') return (draft.notes = el.value);
     else if (el.name === 'category') draft.category = el.value;
     else if (el.name === 'importance') draft.importance = el.value;
     else return;
@@ -599,6 +624,7 @@ function viewForm(r) {
       amount: draft.amount,
       dueDate: draft.dueDate,
       importance: draft.importance,
+      notes: draft.notes.trim(),
     };
     let plans;
     if (editing) {
@@ -612,6 +638,7 @@ function viewForm(r) {
       const plan = {
         id: S.newId(),
         ...fields,
+        stage: 'active',
         createdAt: now,
         baselineMonthly: 0,
         history: draft.saved > 0 ? [{ id: S.newId(), date: t, ts: now, delta: draft.saved, kind: 'initial' }] : [],
@@ -681,7 +708,12 @@ function fillSheet() {
 
 function planSheetHTML(id) {
   const t = today();
-  const p = C.monthBudget(state, t).plans.find((x) => x.id === id);
+  const p = C.planMonth(
+    state.plans.find((x) => x.id === id),
+    state.settings,
+    t,
+  );
+  const active = C.isActive(p);
   const hist = [...p.history].sort((a, b) => (a.ts < b.ts ? 1 : -1));
   const last = p.schedule[p.schedule.length - 1];
   return `
@@ -689,12 +721,14 @@ function planSheetHTML(id) {
       ${catIcon(p.category)}
       <div class="sheet-title-wrap">
         <h2 id="sheet-title" class="sheet-title">${esc(p.name)}</h2>
-        <span class="tags"><span class="tag">${esc(p.category)}</span>${importanceTag(p.importance)}${statusBadge(p.status)}</span>
+        <span class="tags"><span class="tag">${esc(p.category)}</span>${importanceTag(p.importance)}${badgeOf(p)}</span>
       </div>
       <button class="icon-btn" data-action="close-sheet" aria-label="닫기">${icon('x')}</button>
     </div>
 
     <p class="pc-date num">${icon('calendar')}${dateLabel(p.dueDate, { year: true })}<b class="dday">${ddayLabel(p.dday)}</b></p>
+
+    ${p.notes ? `<p class="memo">${esc(p.notes)}</p>` : ''}
 
     <div class="detail-amount">
       <p class="num"><b class="amount-lg">${won(p.saved)}</b> <span class="muted">/ ${won(p.amount)}</span></p>
@@ -703,7 +737,19 @@ function planSheetHTML(id) {
     </div>
 
     ${
-      p.status === 'done'
+      !active
+        ? `<div class="closed-note">
+             <p>${icon(p.stage === 'spent' ? 'checkCircle' : 'info')}<span>${
+               p.stage === 'spent' ? '지출을 마친 계획이에요.' : '취소한 계획이에요.'
+             } 준비금과 여유 예산 계산에서 빠져요.</span></p>
+             ${
+               p.stage === 'cancelled' && p.saved > 0
+                 ? `<p class="field-hint">확보해 둔 ${won(p.saved)}은 여유 자금으로 쓰거나, 다른 계획을 열어 '확보했어요'로 옮겨 기록하세요.</p>`
+                 : ''
+             }
+             <button type="button" class="btn btn-ghost btn-sm" data-stage="active">다시 준비하기</button>
+           </div>`
+        : p.status === 'done'
         ? `<p class="done-note">${icon('checkCircle')}목표 금액을 다 모았어요.</p>`
         : `<div class="stat-grid">
              <div><p class="pv-label">이번 달 추천 확보액</p><p class="pv-value num accent">${won(p.monthlyNeed)}</p></div>
@@ -711,14 +757,14 @@ function planSheetHTML(id) {
            </div>
            <p class="pv-note num">${
              p.overdue
-               ? '필요한 날짜가 지났어요. 날짜를 바꾸거나, 다 썼다면 계획을 지워 주세요.'
+               ? "필요한 날짜가 지났어요. 날짜를 바꾸거나, 이미 썼다면 아래 '지출 완료'를 눌러 주세요."
                : p.count === 1
                  ? '이번 달 안에 필요한 날짜라 남은 금액을 이번 달에 모두 준비해요.'
                  : `이번 달 포함 ${p.count}회 · ${last !== p.monthlyNeed ? `${won(p.monthlyNeed)}씩, 마지막 회차 ${won(last)}` : `${won(p.monthlyNeed)}씩`}`
            }</p>`
     }
 
-    <section class="record">
+    ${active ? `<section class="record">
       <h3 class="sub-title">확보액 기록</h3>
       <p class="field-hint">실제로 돈이 옮겨지지는 않아요. 따로 모아 둔 금액을 적어 두는 곳이에요.</p>
       ${moneyField('rec-amount', 0)}
@@ -734,6 +780,15 @@ function planSheetHTML(id) {
         <button type="button" class="btn btn-primary" data-rec="1">${icon('plus')}확보했어요</button>
       </div>
     </section>
+
+    <section class="settings-section">
+      <h3 class="sub-title">계획 마치기</h3>
+      <p class="field-hint" id="stage-hint">돈을 다 썼으면 '지출 완료', 계획이 없어졌으면 '취소'. 둘 다 계산에서 빠지고, 언제든 다시 준비할 수 있어요.</p>
+      <div class="rec-actions">
+        <button type="button" class="btn btn-ghost" data-stage="spent">${icon('checkCircle')}<span>지출 완료</span></button>
+        <button type="button" class="btn btn-ghost" data-stage="cancelled">${icon('x')}<span>계획 취소</span></button>
+      </div>
+    </section>` : ''}
 
     <section class="history">
       <h3 class="sub-title">변경 이력</h3>
@@ -758,10 +813,11 @@ function bindPlanSheet(body, id) {
   const input = body.querySelector('#rec-amount');
   const err = body.querySelector('#rec-error');
   let value = 0;
-  bindMoney(input, (v) => {
-    value = v;
-    err.hidden = true;
-  });
+  if (input)
+    bindMoney(input, (v) => {
+      value = v;
+      err.hidden = true;
+    });
   const showErr = (msg) => {
     err.innerHTML = `${icon('alertOctagon')}${esc(msg)}`;
     err.hidden = false;
@@ -772,6 +828,23 @@ function bindPlanSheet(body, id) {
     const set = e.target.closest('[data-rec-set]');
     const rec = e.target.closest('[data-rec]');
     const del = e.target.closest('[data-action="delete-plan"]');
+    const stageBtn = e.target.closest('[data-stage]');
+    if (stageBtn) {
+      const stage = stageBtn.dataset.stage;
+      const plan = state.plans.find((p) => p.id === id);
+      const saved = C.savedTotal(plan);
+      // 취소할 때 확보해 둔 돈이 있으면 처리 방법을 먼저 안내하고 한 번 더 누르게 한다
+      if (stage === 'cancelled' && saved > 0 && !stageBtn.dataset.confirm) {
+        stageBtn.dataset.confirm = '1';
+        stageBtn.querySelector('span').textContent = '정말 취소';
+        body.querySelector('#stage-hint').innerHTML =
+          `<b>확보해 둔 ${won(saved)}은 계산에서 빠져요.</b> 실제로 모아 둔 돈은 여유 자금으로 쓰거나, 다른 계획을 열어 '확보했어요'로 옮겨 기록하세요.`;
+        return;
+      }
+      commit({ ...state, plans: state.plans.map((p) => (p.id === id ? { ...p, stage } : p)) });
+      toast(stage === 'active' ? '다시 준비 중으로 바꿨어요' : stage === 'spent' ? '지출 완료로 표시했어요' : '계획을 취소했어요');
+      return;
+    }
     if (add) value = setMoney(input, value + Number(add.dataset.recAdd));
     else if (set) value = setMoney(input, Number(set.dataset.recSet));
     else if (rec) {
@@ -794,7 +867,7 @@ function bindPlanSheet(body, id) {
     } else if (del) {
       if (!del.dataset.confirm) {
         del.dataset.confirm = '1';
-        del.querySelector('span').textContent = '한 번 더 누르면 삭제';
+        del.querySelector('span').textContent = '정말 삭제';
         return;
       }
       commit({ ...state, plans: state.plans.filter((p) => p.id !== id) });

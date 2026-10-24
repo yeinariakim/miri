@@ -5,11 +5,13 @@ import {
   currentPeriod,
   installments,
   monthBudget,
+  parseWon,
   paydayIn,
   planMonth,
   prepCount,
   previewPlan,
   suggestAdjustments,
+  todayStr,
   validatePlan,
 } from '../calc.js';
 
@@ -212,4 +214,48 @@ test('보조 함수', () => {
   assert.deepEqual(installments(0, 3), []);
   assert.equal(addMonths('2027-01-31', 1), '2027-02-28');
   assert.equal(addMonths('2026-12-10', 2), '2027-02-10');
+});
+
+test('금액 입력: 숫자가 아닌 문자·음수 부호는 버리고 원 단위 정수만', () => {
+  assert.equal(parseWon('1,234,567원'), 1234567);
+  assert.equal(parseWon('-50000'), 50000);
+  assert.equal(parseWon('12.5만'), 125);
+  assert.equal(parseWon('abc'), 0);
+  assert.equal(parseWon(''), 0);
+});
+
+test('기한이 같은 목표 여러 개는 각각 계산해 정확히 합산', () => {
+  const today = '2026-10-26';
+  const state = {
+    settings,
+    plans: [
+      plan('a', 100000, '2027-01-10'), // 3회 → 33,334
+      plan('b', 100000, '2027-01-10', { saved: 1 }), // 99,999 / 3 → 33,333
+      plan('c', 200000, '2027-01-10'), // 66,667
+    ],
+  };
+  const b = monthBudget(state, today);
+  assert.deepEqual(b.plans.map((p) => p.count), [3, 3, 3]);
+  assert.equal(b.reserve, 33334 + 33333 + 66667);
+});
+
+test('지출 완료·취소한 계획은 준비금과 여유 예산에서 빠진다 (이중 계산 방지)', () => {
+  const today = '2026-10-26';
+  const base = [plan('a', 200000, '2026-11-20'), plan('b', 300000, '2026-12-10')];
+  const all = monthBudget({ settings, plans: base }, today);
+  assert.equal(all.reserve, 350000);
+
+  const spent = monthBudget({ settings, plans: [{ ...base[0], stage: 'spent' }, base[1]] }, today);
+  assert.equal(spent.reserve, 150000);
+  assert.equal(spent.free, all.free + 200000);
+
+  const cancelled = monthBudget({ settings, plans: [base[0], { ...base[1], stage: 'cancelled' }] }, today);
+  assert.deepEqual(cancelled.plans.map((p) => p.id), ['a']);
+  assert.equal(suggestAdjustments({ settings, plans: [{ ...base[0], stage: 'spent' }] }, today), null);
+});
+
+test('오늘 날짜는 한국 시간(Asia/Seoul) 기준', () => {
+  assert.equal(todayStr(new Date('2026-10-24T14:59:00Z')), '2026-10-24'); // 23:59 KST
+  assert.equal(todayStr(new Date('2026-10-24T15:00:00Z')), '2026-10-25'); // 00:00 KST
+  assert.equal(todayStr(new Date('2028-02-28T15:30:00Z')), '2028-02-29'); // 윤년
 });

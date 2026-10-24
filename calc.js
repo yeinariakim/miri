@@ -9,6 +9,15 @@ export const IMPORTANCE = {
   wish: '희망',
 };
 
+// 계획의 진행 단계. '준비 중'만 준비금·여유 예산 계산에 들어간다.
+export const STAGES = {
+  active: '준비 중',
+  spent: '지출 완료',
+  cancelled: '취소',
+};
+
+export const isActive = (plan) => (plan.stage || 'active') === 'active';
+
 // ---------- 날짜 ----------
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -28,8 +37,16 @@ export function isValidDate(s) {
   return m >= 1 && m <= 12 && d >= 1 && d <= lastDayOfMonth(y, m);
 }
 
+// 오늘 날짜는 기기 시간대와 상관없이 한국 시간 기준
 export function todayStr(now = new Date()) {
-  return fmtDate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t).value;
+  return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
 // m은 1~12
@@ -191,7 +208,7 @@ export function planStatus(p) {
 export function monthBudget(state, today) {
   const s = state.settings;
   const period = currentPeriod(today, s.payday);
-  const plans = state.plans.map((p) => planMonth(p, s, today));
+  const plans = state.plans.filter(isActive).map((p) => planMonth(p, s, today));
   const reserve = plans.reduce((sum, p) => sum + p.monthlyNeed, 0);
   const reserveLeft = plans.reduce((sum, p) => sum + p.thisMonthLeft, 0);
   const free = s.salary - s.fixed - s.savings - s.living - reserve;
