@@ -80,6 +80,18 @@ function progressBar(p) {
   return `<span class="progress" role="progressbar" aria-label="진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></span>`;
 }
 
+// "10월 0원 · 11월 150,000원" — 길면 앞 5개만
+function scheduleLine(schedule) {
+  const shown = schedule.slice(0, 5).map((x) => `${x.label} ${won(x.amount)}`);
+  if (schedule.length > 5) shown.push(`외 ${schedule.length - 5}회`);
+  return shown.join(' · ');
+}
+
+const shortLine = (p) =>
+  p.shortfall > 0
+    ? `<span class="short-line">${icon('alertOctagon')}<span><b>부족</b> · 기한까지 ${won(p.shortfall)}을 못 모아요</span></span>`
+    : '';
+
 const byDue = (a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0);
 
 let toastTimer;
@@ -159,8 +171,8 @@ function viewHome() {
   const t = today();
   const b = C.monthBudget(state, t);
   const sug = C.suggestAdjustments(state, t);
-  const neg = b.free < 0;
-  const freeText = won(b.free);
+  const neg = b.spendable !== null && b.spendable < 0;
+  const spendText = b.spendable === null ? '' : won(b.spendable);
   const upcoming = b.plans.filter((p) => p.status !== 'done').sort(byDue).slice(0, 3);
   const noSalary = !b.salary;
 
@@ -177,17 +189,30 @@ function viewHome() {
     </header>
 
     <section class="hero" aria-labelledby="hero-label">
-      <p class="hero-label" id="hero-label">이번 달 자유롭게 쓸 수 있는 돈</p>
-      <p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(freeText)}">${freeText}</p>
+      <p class="hero-label" id="hero-label">다음 월급날까지 쓸 수 있는 돈</p>
       ${
-        neg
-          ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 이번 달 ${won(-b.free)}이 모자라요</span></p>`
-          : ''
+        b.spendable === null
+          ? `<p class="hero-empty">지금 통장 잔고를 넣으면 계산해 드려요.</p>
+             <button class="btn btn-primary btn-sm" data-action="open-settings" data-focus="balance">지금 잔고 입력하기</button>`
+          : `<p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(spendText)}">${spendText}</p>
+             ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 다음 월급날까지 ${won(-b.spendable)}이 모자라요</span></p>` : ''}
+             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 월급 전 필요한 계획 ${won(b.dueBeforePayday)}</p>
+             ${
+               b.balanceAge >= 2
+                 ? `<button class="stale-btn" data-action="open-settings" data-focus="balance">${icon('clock')}<span>${b.balanceAge}일 전 잔고 기준 · <b>업데이트</b></span></button>`
+                 : ''
+             }`
       }
-      <p class="hero-note">${icon('info')}<span>계좌 잔액이 아닌 <b>예상 예산</b>이에요</span></p>
+      <div class="hero-sub">
+        <div class="hero-sub-row">
+          <span>이번 달 예상 여유 예산</span>
+          <b class="num ${b.free < 0 ? 'neg' : ''}">${b.free < 0 ? `${icon('alertOctagon')}부족 ` : ''}${won(b.free)}</b>
+        </div>
+        <p class="hero-note">${icon('info')}<span>월급에서 고정지출·적금·생활비·이번 달 준비금을 뺀 <b>예상 예산</b>이에요. 계좌 잔액이 아니에요.</span></p>
+      </div>
       ${
         noSalary
-          ? `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`
+          ? `<button class="btn btn-ghost btn-sm" data-action="open-settings">월급부터 입력하기</button>`
           : ''
       }
     </section>
@@ -204,7 +229,7 @@ function viewHome() {
         b.reserve === 0
           ? '이번 달에 따로 모을 준비금이 없어요.'
           : b.reserveLeft > 0
-            ? `계획 ${b.plans.filter((p) => p.monthlyNeed > 0).length}개 · 아직 <b class="num">${won(b.reserveLeft)}</b> 더 확보해야 해요`
+            ? `계획 ${b.plans.filter((p) => p.thisMonth > 0).length}개 · 아직 <b class="num">${won(b.reserveLeft)}</b> 더 확보해야 해요`
             : `${icon('checkCircle')} 이번 달 준비금을 모두 확보했어요`
       }</p>
     </section>
@@ -278,8 +303,12 @@ function suggestionCard(sug) {
   const items = sug.items.filter((i) => i.needed);
   return `
     <section class="card alert-card" aria-labelledby="sug-title">
-      <h2 id="sug-title" class="alert-title">${icon('alertOctagon')}<span><b>부족</b> · 이번 달 ${won(sug.deficit)}을 줄여야 해요</span></h2>
-      <p class="card-sub">자동으로 바꾸지 않아요. '희망' → '조정 가능' 순으로, 날짜를 늦추면 매달 준비금이 이만큼 줄어요. '필수' 계획은 제안에서 뺐어요.</p>
+      <h2 id="sug-title" class="alert-title">${icon('alertOctagon')}<span><b>부족</b> · ${
+        sug.shortfall
+          ? `기한까지 ${won(sug.shortfall)}을 못 모아요`
+          : `이번 달 ${won(sug.overspend)}을 줄여야 해요`
+      }</span></h2>
+      <p class="card-sub">자동으로 바꾸지 않아요. '희망' → '조정 가능' 순으로, 날짜를 늦추면 이번 달 준비금과 부족액이 이렇게 바뀌어요. '필수' 계획은 제안에서 뺐어요.</p>
       ${
         items.length
           ? `<ol class="sug-list">${items
@@ -289,11 +318,11 @@ function suggestionCard(sug) {
             <div class="sug-head">
               <b class="sug-name">${esc(it.name)}</b>${importanceTag(it.importance)}
             </div>
-            <p class="sug-now">지금 ${dateLabel(it.dueDate)} · 매달 <b class="num">${won(it.monthly)}</b></p>
+            <p class="sug-now">지금 ${dateLabel(it.dueDate)} · 이번 달 <b class="num">${won(it.monthly)}</b></p>
             <ul class="sug-opts">
               ${it.options
                 .map(
-                  (o) => `<li><span>+${o.months}개월 <span class="muted">${dateLabel(o.newDate)}</span></span><span class="num"><b>${won(o.monthly)}</b> <span class="saving">−${C.formatWon(o.saving)}</span></span></li>`,
+                  (o) => `<li><span>+${o.months}개월 <span class="muted">${dateLabel(o.newDate)}</span></span><span class="num">이번 달 <b>${won(o.monthly)}</b> · ${o.deficitAfter > 0 ? `부족 ${won(o.deficitAfter)}` : '<b>부족 해결</b>'}</span></li>`,
                 )
                 .join('')}
             </ul>
@@ -305,7 +334,9 @@ function suggestionCard(sug) {
       }
       <p class="sug-foot">${
         !sug.items.length
-          ? '늦출 수 있는 희망·조정 가능 계획이 없어요. 생활비나 적금 금액을 점검해 보세요.'
+          ? sug.shortfall
+            ? '희망·조정 가능 계획을 늦춰도 해결되지 않아요. 다음 월급 전에 필요한 계획에 이번 달 잔고가 모자라서 생긴 부족이에요. 잔고와 나갈 돈이 맞는지 확인하거나, 그 계획의 금액·날짜를 조정해 보세요.'
+            : '늦춰서 줄일 수 있는 희망·조정 가능 계획이 없어요. 생활비나 적금 금액을 점검해 보세요.'
           : sug.uncovered > 0
             ? `희망·조정 가능 계획을 모두 3개월 늦춰도 <b class="num">${won(sug.uncovered)}</b>이 부족해요. 생활비나 적금도 함께 점검해 보세요.`
             : `위 ${items.length}개 계획을 3개월씩 늦추면 부족분을 메울 수 있어요.`
@@ -325,7 +356,7 @@ function upcomingRow(p) {
           ${progressBar(p)}
         </span>
         <span class="row-end">
-          <span class="row-amount num"><span class="row-amount-label">이번 달</span>${won(p.monthlyNeed)}</span>
+          <span class="row-amount num"><span class="row-amount-label">이번 달</span>${won(p.thisMonth)}</span>
           ${statusBadge(p.status)}
         </span>
       </button>
@@ -387,9 +418,10 @@ function planCard(p) {
               ? `<span class="muted">${p.stage === 'spent' ? '지출을 마친 계획이에요' : '취소한 계획이에요'}</span>`
               : p.status === 'done'
                 ? '<span class="muted">목표 금액을 다 모았어요</span>'
-                : `<span class="muted">이번 달 추천 확보액 · 이번 달 포함 ${p.count}회</span><b class="num accent">${won(p.monthlyNeed)}</b>`
+                : `<span class="muted">이번 달 확보할 금액 · 이번 달 포함 ${p.count}회</span><b class="num accent">${won(p.thisMonth)}</b>`
           }
         </span>
+        ${C.isActive(p) && p.status !== 'done' ? `<span class="sched num">${scheduleLine(p.schedule)}</span>${shortLine(p)}` : ''}
       </button>
     </li>`;
 }
@@ -539,13 +571,13 @@ function viewForm(r) {
     const canCalc = draft.amount > 0 && C.isValidDate(draft.dueDate) && !C.isPastDate(draft.dueDate, t);
     if (canCalc && draft.saved <= draft.amount && (!editing || draft.amount >= savedNow)) {
       const pv = C.previewPlan(state, draftPlan(), t, editing ? editing.id : null);
-      const last = pv.schedule[pv.schedule.length - 1];
       const neg = pv.freeAfter < 0;
+      const spendChanged = pv.spendableBefore !== null && pv.spendableBefore !== pv.spendableAfter;
       $preview.className = 'preview';
       $preview.innerHTML = `
         <div class="pv-grid">
           <div>
-            <p class="pv-label">매달 필요한 금액</p>
+            <p class="pv-label">이번 달 확보할 금액</p>
             <p class="pv-value num accent">${won(pv.monthly)}</p>
           </div>
           <div>
@@ -553,17 +585,23 @@ function viewForm(r) {
             <p class="pv-value num">이번 달 포함 ${pv.count}회</p>
           </div>
         </div>
+        <p class="sched num">${scheduleLine(pv.schedule)}</p>
+        ${shortLine(pv)}
         ${
-          pv.count > 1 && last !== pv.monthly
-            ? `<p class="pv-note num">마지막 회차는 ${won(last)}으로 맞춰요.</p>`
-            : pv.count === 1 && pv.monthly > 0
-              ? `<p class="pv-note">이번 달 안에 필요한 날짜라 남은 금액을 이번 달에 모두 준비해요.</p>`
-              : ''
+          pv.count === 1
+            ? `<p class="pv-note">다음 월급 전에 필요한 날짜라 남은 금액을 이번 달에 모두 준비해요.</p>`
+            : ''
         }
         <div class="pv-free">
           <p class="pv-label">${editing ? '수정하면' : '추가하면'} 여유 예산</p>
           <p class="pv-change num"><span>${won(pv.freeBefore)}</span>${icon('chevronRight')}<b class="${neg ? 'neg' : 'accent'}">${won(pv.freeAfter)}</b></p>
           ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>부족</b> · 여유 예산이 마이너스가 돼요. 저장한 뒤 홈에서 조정 제안을 볼 수 있어요.</span></p>` : ''}
+          ${
+            spendChanged
+              ? `<p class="pv-label">다음 월급날까지 쓸 수 있는 돈</p>
+                 <p class="pv-change num"><span>${won(pv.spendableBefore)}</span>${icon('chevronRight')}<b class="${pv.spendableAfter < 0 ? 'neg' : 'accent'}">${won(pv.spendableAfter)}</b></p>`
+              : ''
+          }
         </div>`;
     } else {
       $preview.className = 'preview empty-pv';
@@ -708,14 +746,12 @@ function fillSheet() {
 
 function planSheetHTML(id) {
   const t = today();
-  const p = C.planMonth(
-    state.plans.find((x) => x.id === id),
-    state.settings,
-    t,
-  );
-  const active = C.isActive(p);
+  const raw = state.plans.find((x) => x.id === id);
+  const active = C.isActive(raw);
+  const p = active
+    ? C.monthBudget(state, t).plans.find((x) => x.id === id)
+    : C.planMonth(raw, state.settings, t);
   const hist = [...p.history].sort((a, b) => (a.ts < b.ts ? 1 : -1));
-  const last = p.schedule[p.schedule.length - 1];
   return `
     <div class="sheet-head">
       ${catIcon(p.category)}
@@ -752,7 +788,7 @@ function planSheetHTML(id) {
         : p.status === 'done'
         ? `<p class="done-note">${icon('checkCircle')}목표 금액을 다 모았어요.</p>`
         : `<div class="stat-grid">
-             <div><p class="pv-label">이번 달 추천 확보액</p><p class="pv-value num accent">${won(p.monthlyNeed)}</p></div>
+             <div><p class="pv-label">이번 달 확보할 금액</p><p class="pv-value num accent">${won(p.thisMonth)}</p></div>
              <div><p class="pv-label">이번 달 남은 확보액</p><p class="pv-value num">${won(p.thisMonthLeft)}</p></div>
            </div>
            <p class="pv-note num">${
@@ -760,8 +796,10 @@ function planSheetHTML(id) {
                ? "필요한 날짜가 지났어요. 날짜를 바꾸거나, 이미 썼다면 아래 '지출 완료'를 눌러 주세요."
                : p.count === 1
                  ? '이번 달 안에 필요한 날짜라 남은 금액을 이번 달에 모두 준비해요.'
-                 : `이번 달 포함 ${p.count}회 · ${last !== p.monthlyNeed ? `${won(p.monthlyNeed)}씩, 마지막 회차 ${won(last)}` : `${won(p.monthlyNeed)}씩`}`
-           }</p>`
+                 : `이번 달 포함 ${p.count}회 · 여유 있는 달에 더 넣고, 모자란 달 몫은 다음 달로 넘겨요.`
+           }</p>
+           <p class="sched num">${scheduleLine(p.schedule)}</p>
+           ${shortLine(p)}`
     }
 
     ${active ? `<section class="record">
@@ -889,6 +927,20 @@ function settingsSheetHTML() {
     </div>
 
     <form id="settings-form" class="form" novalidate>
+      <div class="balance-box">
+        <div class="field">
+          <label class="field-label" for="balance">지금 통장 잔고</label>
+          ${moneyField('balance', s.balance, '0')}
+          <span class="field-hint">${
+            C.hasBalance(s) ? `${dateLabel(s.balanceUpdatedAt, { year: true })}에 고쳤어요. ` : ''
+          }은행 앱을 보고 직접 적어요. 이미 확보해 둔 준비금은 빼고, 쓰는 통장 잔고만요.</span>
+        </div>
+        <div class="field">
+          <label class="field-label" for="pendingOut">다음 월급 전까지 아직 나갈 돈</label>
+          ${moneyField('pendingOut', s.pendingOut)}
+          <span class="field-hint">카드값, 아직 안 빠진 고정지출 등의 합계. 잔고를 고칠 때 같이 고쳐 주세요.</span>
+        </div>
+      </div>
       <div class="field">
         <label class="field-label" for="salary">월 실수령액</label>
         ${moneyField('salary', s.salary)}
@@ -1006,6 +1058,14 @@ function bindSettingsSheet(body) {
   });
   renderFixed();
 
+  let balanceTouched = false;
+  for (const key of ['balance', 'pendingOut']) {
+    bindMoney(form.querySelector(`#${key}`), (v) => {
+      vals[key] = v;
+      balanceTouched = true;
+    });
+  }
+
   for (const key of ['salary', 'savings', 'living']) {
     bindMoney(form.querySelector(`#${key}`), (v) => {
       vals[key] = v;
@@ -1020,7 +1080,10 @@ function bindSettingsSheet(body) {
     const fixedItems = vals.fixedItems
       .filter((it) => it.amount > 0)
       .map((it) => ({ ...it, name: it.name.trim() || '이름 없는 항목' }));
-    commit({ ...state, settings: { ...vals, fixedItems, payday: Number(form.payday.value) } });
+    const balance = balanceTouched
+      ? { balance: vals.balance || 0, balanceUpdatedAt: today() }
+      : { balance: state.settings.balance, balanceUpdatedAt: state.settings.balanceUpdatedAt };
+    commit({ ...state, settings: { ...vals, ...balance, fixedItems, payday: Number(form.payday.value) } });
     toast('설정을 저장했어요');
   });
 
@@ -1070,7 +1133,10 @@ document.addEventListener('click', (e) => {
   if (!el) return;
   const a = el.dataset.action;
   if (a === 'open-plan') openSheet('plan', el.dataset.id);
-  else if (a === 'open-settings') openSheet('settings');
+  else if (a === 'open-settings') {
+    openSheet('settings');
+    if (el.dataset.focus) $sheetRoot.querySelector(`#${el.dataset.focus}`)?.focus({ preventScroll: true });
+  }
   else if (a === 'close-sheet') closeSheet();
   else if (a === 'back' && cameFromApp) {
     e.preventDefault();

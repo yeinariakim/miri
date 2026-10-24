@@ -56,7 +56,12 @@ function normalizeState(data) {
     fixedItems: normalizeFixedItems(s),
     savings: int(s.savings),
     living: int(s.living),
+    // 지금 통장 잔고(직접 입력)와 고친 날. 넣은 적이 없으면 null.
+    balance: s.balance == null || s.balance === '' ? null : int(s.balance),
+    balanceUpdatedAt: isValidDate(s.balanceUpdatedAt) ? s.balanceUpdatedAt : null,
+    pendingOut: int(s.pendingOut),
   };
+  if (settings.balance === null) settings.balanceUpdatedAt = null;
   const plans = data.plans
     .filter((p) => p && typeof p.name === 'string' && isValidDate(p.dueDate) && int(p.amount) > 0)
     .map((p) => ({
@@ -110,7 +115,16 @@ export function createSampleState(today) {
     ['넷플릭스', 13500],
     ['스포티파이', 10900],
   ].map(([name, amount]) => ({ id: newId(), name, amount, sample: true }));
-  const settings = { salary: 3200000, payday: 25, fixedItems, savings: 500000, living: 1200000 };
+  const settings = {
+    salary: 3200000,
+    payday: 25,
+    fixedItems,
+    savings: 500000,
+    living: 1200000,
+    balance: 900000,
+    balanceUpdatedAt: today,
+    pendingOut: 250000,
+  };
   const { y } = parseDate(today);
   const yearEnd = `${y}-12-20` > addDays(today, 14) ? `${y}-12-20` : `${y + 1}-12-20`;
   const samples = [

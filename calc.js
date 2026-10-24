@@ -213,39 +213,138 @@ export function fixedTotal(settings) {
   return settings.fixed || 0;
 }
 
+// 매달 준비 가능 금액 = 월급 - 고정지출 - 적금 - 생활비
+export function monthlyCapacity(settings) {
+  return Math.max(0, settings.salary - fixedTotal(settings) - settings.savings - settings.living);
+}
+
+export const hasBalance = (settings) => typeof settings.balance === 'number' && !!settings.balanceUpdatedAt;
+
+// 이번 달(현재 월급 주기)에 준비할 수 있는 돈 = max(잔고 - 다음 월급 전까지 나갈 돈, 0).
+// 잔고를 아직 안 넣었으면 매달 준비 가능 금액으로 대신한다.
+export function availableNow(settings) {
+  if (!hasBalance(settings)) return monthlyCapacity(settings);
+  return Math.max(0, settings.balance - (settings.pendingOut || 0));
+}
+
+// 월급 주기 k번째(0 = 이번 달)의 시작일
+export function periodStarts(today, payday, n) {
+  const { start, nextPayday } = currentPeriod(today, payday);
+  const out = [start];
+  let { y, m } = parseDate(nextPayday);
+  for (let k = 1; k < n; k++) {
+    out.push(paydayIn(y, m, payday));
+    ({ y, m } = shiftMonth(y, m, 1));
+  }
+  return out;
+}
+
+// 화면에 쓰는 달 이름: 그 월급 주기의 대부분이 걸친 달 (25일 월급이면 9/25~10/24 → 10월)
+export function periodLabel(start) {
+  return `${parseDate(addDays(start, 15)).m}월`;
+}
+
+const IMPORTANCE_ORDER = { must: 0, flex: 1, wish: 2 };
+
+// 준비금 배분: 기한 빠른 계획부터, 기한 전 월급 주기마다 고르게 나눈 몫을 채운다.
+// 그 달 준비 가능 금액이 모자라면 모자란 몫은 뒤 달로 넘기고, 기한까지도 못 채우면
+// 앞쪽에 남은 자리를 마저 쓴다. 그래도 남으면 부족.
+export function allocate(plans, settings, today) {
+  const order = [...plans].sort(
+    (a, b) =>
+      (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0) ||
+      IMPORTANCE_ORDER[a.importance] - IMPORTANCE_ORDER[b.importance] ||
+      String(a.createdAt || '').localeCompare(String(b.createdAt || '')),
+  );
+  const n = Math.max(1, ...plans.map((p) => p.count));
+  const left = [availableNow(settings), ...Array(n - 1).fill(monthlyCapacity(settings))];
+  const result = new Map();
+
+  for (const p of order) {
+    const alloc = Array(p.count).fill(0);
+    const want = [p.thisMonthLeft, ...installments(p.remaining - p.thisMonthLeft, p.count - 1)];
+    let carry = 0;
+    for (let k = 0; k < p.count; k++) {
+      const need = (want[k] || 0) + carry;
+      const put = Math.min(need, left[k]);
+      alloc[k] += put;
+      left[k] -= put;
+      carry = need - put;
+    }
+    for (let k = p.count - 1; k >= 0 && carry > 0; k--) {
+      const put = Math.min(carry, left[k]);
+      alloc[k] += put;
+      left[k] -= put;
+      carry -= put;
+    }
+    result.set(p.id, { alloc, shortfall: carry });
+  }
+  return { byId: result, left };
+}
+
 export function monthBudget(state, today) {
   const s = state.settings;
   const period = currentPeriod(today, s.payday);
-  const plans = state.plans.filter(isActive).map((p) => planMonth(p, s, today));
-  const reserve = plans.reduce((sum, p) => sum + p.monthlyNeed, 0);
-  const reserveLeft = plans.reduce((sum, p) => sum + p.thisMonthLeft, 0);
+  const base = state.plans.filter(isActive).map((p) => planMonth(p, s, today));
+  const { byId } = allocate(base, s, today);
+  const starts = periodStarts(today, s.payday, Math.max(1, ...base.map((p) => p.count)));
+
+  const plans = base.map((p) => {
+    const { alloc, shortfall } = byId.get(p.id);
+    const info = {
+      ...p,
+      thisMonthLeft: alloc[0],
+      thisMonth: p.savedThisPeriod + alloc[0],
+      schedule: alloc.map((amount, k) => ({ start: starts[k], label: periodLabel(starts[k]), amount })),
+      shortfall,
+    };
+    info.status = p.remaining <= 0 ? 'done' : shortfall > 0 ? 'short' : p.status;
+    return info;
+  });
+
   const fixed = fixedTotal(s);
-  const free = s.salary - fixed - s.savings - s.living - reserve;
+  const reserve = plans.reduce((sum, p) => sum + p.thisMonth, 0);
+  const reserveLeft = plans.reduce((sum, p) => sum + p.thisMonthLeft, 0);
+  const shortfall = plans.reduce((sum, p) => sum + p.shortfall, 0);
+  const dueBeforePayday = plans.filter((p) => p.count === 1).reduce((sum, p) => sum + p.remaining, 0);
+  const balanceSet = hasBalance(s);
   return {
     period,
     salary: s.salary,
     fixed,
     savings: s.savings,
     living: s.living,
+    capacity: monthlyCapacity(s),
     reserve,
     reserveLeft,
-    free,
+    shortfall,
+    free: s.salary - fixed - s.savings - s.living - reserve,
+    balanceSet,
+    balance: balanceSet ? s.balance : null,
+    pendingOut: s.pendingOut || 0,
+    balanceAge: balanceSet ? daysBetween(s.balanceUpdatedAt, today) : null,
+    dueBeforePayday,
+    // 다음 월급날까지 쓸 수 있는 돈
+    spendable: balanceSet ? s.balance - (s.pendingOut || 0) - dueBeforePayday : null,
     plans,
   };
 }
 
-// 추가/수정 화면 미리보기: 이 계획을 넣으면 여유 예산이 어떻게 바뀌는지
+// 추가/수정 화면 미리보기: 이 계획을 넣으면 여유 예산과 배분이 어떻게 바뀌는지
 export function previewPlan(state, draft, today, editingId = null) {
-  const freeBefore = monthBudget(state, today).free;
+  const before = monthBudget(state, today);
   const others = state.plans.filter((p) => p.id !== editingId);
-  const freeAfter = monthBudget({ ...state, plans: [...others, draft] }, today).free;
-  const pm = planMonth(draft, state.settings, today);
+  const after = monthBudget({ ...state, plans: [...others, draft] }, today);
+  const p = after.plans.find((x) => x.id === draft.id);
   return {
-    count: pm.count,
-    monthly: pm.monthlyNeed,
-    schedule: pm.schedule,
-    freeBefore,
-    freeAfter,
+    count: p.count,
+    monthly: p.thisMonth,
+    schedule: p.schedule,
+    shortfall: p.shortfall,
+    freeBefore: before.free,
+    freeAfter: after.free,
+    spendableBefore: before.spendable,
+    spendableAfter: after.spendable,
   };
 }
 
@@ -266,40 +365,53 @@ export function validatePlan(draft, today, { minAmount = 0 } = {}) {
   return errors;
 }
 
-// 여유 예산이 마이너스일 때: '희망' → '조정 가능' 순으로 날짜를 늦추는 제안.
-// '필수'는 제외. 아무것도 바꾸지 않고 숫자만 돌려준다.
+// 기한까지 못 모으는 계획이 있거나 여유 예산이 마이너스일 때:
+// '희망' → '조정 가능' 순으로 날짜를 늦추면 어떻게 되는지 제안. '필수'는 제외.
+// 아무것도 바꾸지 않고 숫자만 돌려준다.
 export function suggestAdjustments(state, today, delays = [1, 2, 3]) {
+  const deficitOf = (b) => b.shortfall + Math.max(0, -b.free);
   const b = monthBudget(state, today);
-  if (b.free >= 0) return null;
-  const deficit = -b.free;
+  const deficit = deficitOf(b);
+  if (deficit <= 0) return null;
   const order = { wish: 0, flex: 1 };
   const items = b.plans
-    .filter((p) => p.importance in order && p.monthlyNeed > 0 && !p.overdue)
-    .sort((a, c) => order[a.importance] - order[c.importance] || c.monthlyNeed - a.monthlyNeed)
+    .filter((p) => p.importance in order && p.remaining > 0 && !p.overdue)
+    .sort((a, c) => order[a.importance] - order[c.importance] || c.thisMonth - a.thisMonth)
     .map((p) => ({
       id: p.id,
       name: p.name,
       importance: p.importance,
       dueDate: p.dueDate,
-      monthly: p.monthlyNeed,
+      monthly: p.thisMonth,
       options: delays.map((k) => {
         const newDate = addMonths(p.dueDate, k);
-        const count = prepCount(newDate, today, state.settings.payday);
-        const monthly = Math.ceil(p.remainingAtStart / count);
-        return { months: k, newDate, count, monthly, saving: p.monthlyNeed - monthly };
+        const plans = state.plans.map((x) => (x.id === p.id ? { ...x, dueDate: newDate } : x));
+        const nb = monthBudget({ ...state, plans }, today);
+        const np = nb.plans.find((x) => x.id === p.id);
+        return {
+          months: k,
+          newDate,
+          count: np.count,
+          monthly: np.thisMonth,
+          saving: p.thisMonth - np.thisMonth,
+          deficitAfter: deficitOf(nb),
+        };
       }),
-    }));
+    }))
+    // 늦춰도 부족이 줄지 않는 계획은 제안하지 않는다
+    .filter((it) => it.options[it.options.length - 1].deficitAfter < deficit);
 
-  // 앞에서부터 가장 길게 늦췄을 때, 몇 번째 계획까지 손대면 부족분이 메워지는지
+  // 앞에서부터 가장 길게 늦췄을 때, 몇 번째 계획까지 손대면 부족분이 메워지는지 (어림)
   let covered = 0;
   for (const it of items) {
     it.needed = covered < deficit;
-    covered += it.options[it.options.length - 1].saving;
+    covered += Math.max(0, deficit - it.options[it.options.length - 1].deficitAfter);
   }
   return {
     deficit,
+    shortfall: b.shortfall,
+    overspend: Math.max(0, -b.free),
     items,
-    maxSaving: covered,
     uncovered: Math.max(0, deficit - covered),
   };
 }

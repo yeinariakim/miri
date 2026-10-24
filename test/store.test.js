@@ -31,7 +31,16 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
       ],
     }),
   );
-  assert.deepEqual(s.settings, { salary: 3000000, payday: 31, fixedItems: [], savings: 2, living: 0 });
+  assert.deepEqual(s.settings, {
+    salary: 3000000,
+    payday: 31,
+    fixedItems: [],
+    savings: 2,
+    living: 0,
+    balance: null,
+    balanceUpdatedAt: null,
+    pendingOut: 0,
+  });
   assert.equal(s.plans.length, 1);
   assert.equal(s.plans[0].importance, 'flex');
   assert.equal(s.plans[0].stage, 'active');
