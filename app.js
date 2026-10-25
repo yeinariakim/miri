@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.25-1';
+const VERSION = '2026.10.25-2';
 
 const today = () => C.todayStr();
 
@@ -483,52 +483,75 @@ function viewCalendar() {
   `;
 }
 
+// 달마다 "월급에서 무엇을 빼서 얼마가 남는지"를 영수증처럼 보여 준다
 function monthCard(m, b) {
   const balanceMonth = m.k === 0 && b.spendable !== null;
+  const items = state.settings.fixedItems;
+  const row = (label, amount, { sign = '−', cls = '', sub = '' } = {}) => `
+    <li class="bill-row ${cls}">
+      <span class="bill-label"><span class="bill-sign" aria-hidden="true">${sign}</span><span>${label}${sub ? `<small>${sub}</small>` : ''}</span></span>
+      <b class="num">${won(amount)}</b>
+    </li>`;
+  const planRows = m.allocs
+    .map(
+      (a) =>
+        `<li><button class="bill-sub" data-action="open-plan" data-id="${esc(a.id)}"><span>${esc(a.name)}</span><span class="num">${won(a.amount)}</span></button></li>`,
+    )
+    .join('');
+
   return `
     <section class="card month-card ${m.k === 0 ? 'current' : ''}">
       <div class="mc-head">
         <h2>${m.label}${RELATIVE[m.k] ? ` <span class="mc-rel">${RELATIVE[m.k]}</span>` : ''}</h2>
         <span class="muted small num">${shortDate(m.start)} – ${shortDate(m.end)}</span>
       </div>
-      <div class="mc-grid">
-        <div><p class="pv-label">모을 돈</p><p class="pv-value num">${won(m.reserve)}</p></div>
-        <div><p class="pv-label">쓸 수 있는 돈</p><p class="pv-value">${spendCell(m.spend)}</p></div>
-      </div>
+
+      <ul class="bill">
+        ${
+          balanceMonth
+            ? `${row('지금 통장 잔고', b.balance, { sign: '', cls: 'bill-start' })}
+               ${row('아직 나갈 돈', b.pendingOut, { sub: '카드값, 아직 안 빠진 고정지출·적금' })}`
+            : `${row('월급', b.salary, { sign: '', cls: 'bill-start' })}
+               ${row(`고정지출${items.length ? ` · ${items.length}개` : ''}`, b.fixed, {
+                 sub: items.map((it) => esc(it.name)).join(' · '),
+               })}
+               ${row('적금', b.savings)}`
+        }
+        ${row('계획에 따로 모을 돈', m.reserve, { sub: m.allocs.length ? '' : '이 달엔 없어요' })}
+        ${planRows ? `<li><ul class="bill-subs">${planRows}</ul></li>` : ''}
+        ${m.shortfall ? row('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
+        <li class="bill-row bill-total">
+          <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>쓸 수 있는 돈<small>생활비 포함</small></span></span>
+          ${spendCell(m.spend)}
+        </li>
+      </ul>
       <p class="pv-note num">${
         balanceMonth
-          ? `잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 모을 돈${m.shortfall ? ' − 부족' : ''}`
+          ? '다음 월급날까지 생활비까지 포함해서 쓸 수 있는 돈이에요. 고정지출·적금은 이미 빠졌으면 잔고에 반영돼 있고, 아직이면 \'아직 나갈 돈\'에 넣어야 빠져요.'
           : m.extra === 0
-            ? `생활비 ${won(b.living)}만큼 쓸 수 있어요`
+            ? `생활비 ${won(b.living)}만큼 쓸 수 있어요.`
             : m.extra > 0
-            ? `생활비 ${won(b.living)}을 쓰고도 ${won(m.extra)} 더 남아요`
-            : `생활비 ${won(b.living)}보다 ${won(-m.extra)} 적어요`
+              ? `생활비 ${won(b.living)}을 쓰고도 <b>${won(m.extra)}</b> 더 남아요.`
+              : `생활비 ${won(b.living)}보다 ${won(-m.extra)} 적어요.`
       }</p>
-      ${
-        m.allocs.length
-          ? `<div class="mc-list"><p class="mc-list-title">모으기</p><ul>${m.allocs
-              .map(
-                (a) =>
-                  `<li><button class="mc-item" data-action="open-plan" data-id="${esc(a.id)}"><span>${esc(a.name)}</span><b class="num">${won(a.amount)}</b></button></li>`,
-              )
-              .join('')}</ul></div>`
-          : ''
-      }
+
       ${
         m.dues.length
-          ? `<div class="mc-list"><p class="mc-list-title">지출 예정</p><ul>${m.dues
-              .map(
-                (d) =>
-                  `<li><button class="mc-item" data-action="open-plan" data-id="${esc(d.id)}"><span>${esc(d.name)}</span><b class="num">${won(d.amount)}</b></button>${
-                    d.shortfall
-                      ? `<span class="short-line">${icon('alertOctagon')}<span><b>부족</b> · ${won(d.shortfall)}을 못 모아요</span></span>`
-                      : ''
-                  }</li>`,
-              )
-              .join('')}</ul></div>`
+          ? `<div class="mc-list">
+               <p class="mc-list-title">이 달에 나갈 큰 지출 <span class="muted">· 모아 둔 돈에서 나가요</span></p>
+               <ul>${m.dues
+                 .map(
+                   (d) =>
+                     `<li><button class="mc-item" data-action="open-plan" data-id="${esc(d.id)}"><span>${esc(d.name)}</span><b class="num">${won(d.amount)}</b></button>${
+                       d.shortfall
+                         ? `<span class="short-line">${icon('alertOctagon')}<span><b>부족</b> · ${won(d.shortfall)}을 못 모아요. 그만큼 위 '쓸 수 있는 돈'에서 뺐어요.</span></span>`
+                         : ''
+                     }</li>`,
+                 )
+                 .join('')}</ul>
+             </div>`
           : ''
       }
-      ${!m.allocs.length && !m.dues.length ? '<p class="muted small">모을 돈도 나갈 큰 지출도 없어요.</p>' : ''}
     </section>`;
 }
 
