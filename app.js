@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.25-4';
+const VERSION = '2026.10.25-5';
 
 const today = () => C.todayStr();
 
@@ -199,7 +199,7 @@ function viewHome() {
              <button class="btn btn-primary btn-sm" data-action="open-settings" data-focus="balance">지금 잔고 입력하기</button>`
           : `<p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(spendText)}">${spendText}</p>
              ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 다음 월급날까지 ${won(-b.spendable)}이 모자라요</span></p>` : ''}
-             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
+             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} ${b.months[0].spent ? ` − 큰 지출 ${won(b.months[0].spent)}` : ''} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
              ${
                b.balanceAge >= 2
                  ? `<button class="stale-btn" data-action="open-settings" data-focus="balance">${icon('clock')}<span>${b.balanceAge}일 전 잔고 기준 · <b>업데이트</b></span></button>`
@@ -484,18 +484,25 @@ function viewCalendar() {
   `;
 
   const form = document.getElementById('spend-form');
-  form?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const { items, errors } = C.parseSpendLines(form.spend.value);
-    if (!items.length) {
-      toast(errors.length ? `'${errors[0]}'을 못 읽었어요. "렌즈 30"처럼 이름과 금액을 적어 주세요.` : '이름과 금액을 적어 주세요.');
-      return;
-    }
-    const t = today();
-    const added = items.map((x) => ({ id: S.newId(), date: t, ...x }));
-    commit({ ...state, spends: [...(state.spends || []), ...added] });
-    toast(errors.length ? `${added.length}개 적었어요. 못 읽은 줄: ${errors.join(', ')}` : `${added.length}개 적었어요`);
-  });
+  if (form) {
+    const amountInput = form.querySelector('#spend-amount');
+    let amount = 0;
+    bindMoney(amountInput, (v) => (amount = v));
+    form.addEventListener('click', (e) => {
+      const q = e.target.closest('[data-spend-add]');
+      if (q) amount = setMoney(amountInput, amount + Number(q.dataset.spendAdd));
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = form.spendName.value.trim();
+      if (!name) return toast('어디에 쓴 돈인지 적어 주세요.');
+      if (!amount) return toast('금액을 적어 주세요.');
+      const x = { id: S.newId(), date: today(), ts: new Date().toISOString(), name: name.slice(0, 30), amount };
+      commit({ ...state, spends: [...(state.spends || []), x] });
+      toast(`${name} ${won(amount)} 넣었어요`);
+      document.getElementById('spend-name')?.focus({ preventScroll: true });
+    });
+  }
 }
 
 // 달마다 "월급에서 무엇을 빼서 얼마가 남는지"를 영수증처럼 보여 준다
@@ -525,14 +532,16 @@ function monthCard(m, b) {
         ${
           balanceMonth
             ? `${row('지금 통장 잔고', b.balance, { sign: '', cls: 'bill-start' })}
-               ${row('아직 나갈 돈', b.pendingOut, { sub: '카드값, 아직 안 빠진 고정지출·적금' })}`
+               ${row('아직 나갈 돈', b.pendingOut, { sub: '카드값, 아직 안 빠진 고정지출·적금' })}
+               ${spentRows(m, true)}`
             : `${row('월급', m.salary, { sign: '', cls: 'bill-start', sub: m.salaryEdited ? `이 달 실제 금액 · 기본 ${won(b.salaryBase)}` : '기본 월급' })}
                ${row(`고정지출${items.length ? ` · ${items.length}개` : ''}`, m.fixed, {
                  sub: m.fixedItems
                    .map((it) => (it.edited ? `<b class="edited">${esc(it.name)} ${won(it.amount)}</b>` : esc(it.name)))
                    .join(' · '),
                })}
-               ${row('적금', b.savings)}`
+               ${row('적금', b.savings)}
+               ${m.k === 0 ? spentRows(m, false) : ''}`
         }
         ${row('계획에 따로 모을 돈', m.reserve, { sub: m.allocs.length ? '' : '이 달엔 없어요' })}
         ${planRows ? `<li><ul class="bill-subs">${planRows}</ul></li>` : ''}
@@ -577,6 +586,24 @@ function monthCard(m, b) {
     </section>`;
 }
 
+// 이번 달 큰 지출 줄: 잔고에 아직 안 들어간 것만 뺀다
+function spentRows(m, balanceMonth) {
+  const counted = m.spends.filter((x) => !x.reflected);
+  if (!m.spends.length) return '';
+  const label = `<span class="bill-sign" aria-hidden="true">−</span><span>이번 달 큰 지출${
+    balanceMonth ? '<small>잔고를 고친 뒤에 쓴 것만 빼요</small>' : ''
+  }</span>`;
+  return `
+    <li class="bill-row"><span class="bill-label">${label}</span><b class="num">${won(m.spent)}</b></li>
+    ${
+      counted.length
+        ? `<li><ul class="bill-subs">${counted
+            .map((x) => `<li class="bill-sub"><span>${esc(x.name)}</span><span class="num">${won(x.amount)}</span></li>`)
+            .join('')}</ul></li>`
+        : ''
+    }`;
+}
+
 function monthEditSummary(m, balanceMonth) {
   const edited = [...(m.salaryEdited ? ['월급'] : []), ...m.fixedItems.filter((it) => it.edited).map((it) => it.name)];
   const head = balanceMonth ? `이 달 월급 ${won(m.salary)}${m.salaryEdited ? ' (실제)' : ' (기본)'} · 잔고에 이미 들어 있어요` : '';
@@ -587,7 +614,9 @@ function monthEditSummary(m, balanceMonth) {
 const spendItem = (x) => {
   const plan = x.planId && state.plans.find((p) => p.id === x.planId);
   return `<li class="spend-item">
-    <span class="spend-name">${esc(x.name)}</span>
+    <span class="spend-name">${esc(x.name)}${
+      x.reflected ? '<small>잔고에 반영됨</small>' : x.reflected === false ? '<small class="counted">이번 달 계산에서 뺌</small>' : ''
+    }</span>
     <b class="num">${won(x.amount)}</b>
     ${
       plan
@@ -599,16 +628,31 @@ const spendItem = (x) => {
 };
 
 function spendMemo(m) {
-  const list = C.spendsIn(state.spends, m.start, m.end);
+  const list = m.spends;
   const total = list.reduce((sum, x) => sum + x.amount, 0);
+  const balanceSet = C.hasBalance(state.settings);
   return `
     <div class="memo-box">
-      <p class="mc-list-title">이번 달 쓴 큰 돈 ${list.length ? `<span class="num">· 합계 ${won(total)}</span>` : ''}</p>
-      <p class="field-hint">대충 적어 두는 메모예요. 잔고에 이미 반영된 돈이라 계산에는 넣지 않아요. 내년에도 있을 지출은 '내년에도'를 누르면 1년 뒤 같은 날짜로 계획이 만들어져요.</p>
+      <p class="mc-list-title">이번 달 큰 지출 ${list.length ? `<span class="num">· ${list.length}개 · 합계 ${won(total)}</span>` : ''}</p>
+      <p class="field-hint">${
+        balanceSet
+          ? '잔고를 고친 뒤에 쓴 돈은 이번 달 쓸 수 있는 돈에서 빼요. 잔고를 다시 고치면 그 전 지출은 잔고에 반영된 것으로 봐요.'
+          : '이번 달 쓸 수 있는 돈에서 빼요.'
+      } 내년에도 있을 지출은 '내년에도'를 누르면 1년 뒤 같은 날짜로 계획이 만들어져요.</p>
       ${list.length ? `<ul class="spend-list">${list.map(spendItem).join('')}</ul>` : ''}
-      <form class="spend-form" id="spend-form" autocomplete="off">
-        <textarea class="input textarea" name="spend" rows="2" placeholder="렌즈 30&#10;비행기 55  (만원 단위로 적어도 돼요)" aria-label="쓴 돈 적기"></textarea>
-        <button type="submit" class="btn btn-ghost">${icon('plus')}추가</button>
+      <form class="spend-add" id="spend-form" autocomplete="off" novalidate>
+        <div class="spend-add-row">
+          <input class="input" id="spend-name" name="spendName" maxlength="30" placeholder="어디에 (예: 렌즈)" aria-label="지출 이름">
+          ${moneyField('spend-amount', 0)}
+        </div>
+        <div class="spend-add-row2">
+          <span class="quick" role="group" aria-label="빠르게 더하기">
+            <button type="button" class="chip-btn" data-spend-add="10000">+1만</button>
+            <button type="button" class="chip-btn" data-spend-add="50000">+5만</button>
+            <button type="button" class="chip-btn" data-spend-add="100000">+10만</button>
+          </span>
+          <button type="submit" class="btn btn-primary btn-sm">${icon('plus')}넣기</button>
+        </div>
       </form>
     </div>`;
 }
@@ -1377,8 +1421,12 @@ function bindSettingsSheet(body) {
       .filter((it) => it.amount > 0)
       .map((it) => ({ ...it, name: it.name.trim() || '이름 없는 항목' }));
     const balance = balanceTouched
-      ? { balance: vals.balance || 0, balanceUpdatedAt: today() }
-      : { balance: state.settings.balance, balanceUpdatedAt: state.settings.balanceUpdatedAt };
+      ? { balance: vals.balance || 0, balanceUpdatedAt: today(), balanceTs: new Date().toISOString() }
+      : {
+          balance: state.settings.balance,
+          balanceUpdatedAt: state.settings.balanceUpdatedAt,
+          balanceTs: state.settings.balanceTs,
+        };
     commit({ ...state, settings: { ...vals, ...balance, fixedItems, payday: Number(form.payday.value) } });
     toast('설정을 저장했어요');
   });

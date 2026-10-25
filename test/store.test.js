@@ -39,6 +39,7 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
     living: 0,
     balance: null,
     balanceUpdatedAt: null,
+    balanceTs: null,
     pendingOut: 0,
     fixedOverrides: {},
     salaryOverrides: {},

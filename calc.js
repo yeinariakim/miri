@@ -241,11 +241,30 @@ export function monthlyCapacity(settings, start) {
 
 export const hasBalance = (settings) => typeof settings.balance === 'number' && !!settings.balanceUpdatedAt;
 
-// 이번 달(현재 월급 주기)에 준비할 수 있는 돈 = max(잔고 - 다음 월급 전까지 나갈 돈, 0).
-// 잔고를 아직 안 넣었으면 매달 준비 가능 금액으로 대신한다.
-export function availableNow(settings, start) {
-  if (!hasBalance(settings)) return monthlyCapacity(settings, start);
-  return Math.max(0, settings.balance - (settings.pendingOut || 0));
+// 이번 달에 쓴 큰 돈이 이미 잔고에 들어 있는지: 잔고를 고친 뒤에 적은 것만 아직 안 들어 있다고 본다.
+export function isReflected(spend, settings) {
+  if (!hasBalance(settings)) return false;
+  if (spend.ts && settings.balanceTs) return spend.ts <= settings.balanceTs;
+  // 잔고 고친 시각이 없으면(예전 버전에서 고침) 날짜로 본다. 시각이 있는 지출은 그 뒤 버전에서 적은 것이라
+  // 같은 날이면 잔고를 고친 뒤로 본다.
+  if (spend.ts) return spend.date < settings.balanceUpdatedAt;
+  return spend.date <= settings.balanceUpdatedAt;
+}
+
+// 이번 달(현재 월급 주기)에 쓴 큰 돈. 잔고에 아직 안 들어간 것만 계산에서 뺀다.
+export function spentThisPeriod(state, today) {
+  const s = state.settings;
+  const { start, end } = currentPeriod(today, s.payday);
+  const list = spendsIn(state.spends, start, end).map((x) => ({ ...x, reflected: isReflected(x, s) }));
+  return { list, counted: list.filter((x) => !x.reflected).reduce((sum, x) => sum + x.amount, 0) };
+}
+
+// 이번 달(현재 월급 주기)에 준비할 수 있는 돈
+//   = max(잔고 - 다음 월급 전까지 나갈 돈 - 잔고 고친 뒤 쓴 큰 돈, 0)
+// 잔고를 아직 안 넣었으면 매달 준비 가능 금액에서 이번 달 쓴 큰 돈을 뺀 값으로 대신한다.
+export function availableNow(settings, start, spent = 0) {
+  if (!hasBalance(settings)) return Math.max(0, monthlyCapacity(settings, start) - spent);
+  return Math.max(0, settings.balance - (settings.pendingOut || 0) - spent);
 }
 
 // 월급 주기 k번째(0 = 이번 달)의 시작일
@@ -270,7 +289,7 @@ const IMPORTANCE_ORDER = { must: 0, flex: 1, wish: 2 };
 // 준비금 배분: 기한 빠른 계획부터, 기한 전 월급 주기마다 고르게 나눈 몫을 채운다.
 // 그 달 준비 가능 금액이 모자라면 모자란 몫은 뒤 달로 넘기고, 기한까지도 못 채우면
 // 앞쪽에 남은 자리를 마저 쓴다. 그래도 남으면 부족.
-export function allocate(plans, settings, today) {
+export function allocate(plans, settings, today, spent = 0) {
   const order = [...plans].sort(
     (a, b) =>
       (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0) ||
@@ -279,7 +298,7 @@ export function allocate(plans, settings, today) {
   );
   const n = Math.max(1, ...plans.map((p) => p.count));
   const starts = periodStarts(today, settings.payday, n);
-  const left = starts.map((start, k) => (k === 0 ? availableNow(settings, start) : monthlyCapacity(settings, start)));
+  const left = starts.map((start, k) => (k === 0 ? availableNow(settings, start, spent) : monthlyCapacity(settings, start)));
   const result = new Map();
 
   for (const p of order) {
@@ -308,7 +327,8 @@ export function monthBudget(state, today) {
   const s = state.settings;
   const period = currentPeriod(today, s.payday);
   const base = state.plans.filter(isActive).map((p) => planMonth(p, s, today));
-  const { byId } = allocate(base, s, today);
+  const spent = spentThisPeriod(state, today);
+  const { byId } = allocate(base, s, today, spent.counted);
   const starts = periodStarts(today, s.payday, Math.max(1, ...base.map((p) => p.count)));
 
   const plans = base.map((p) => {
@@ -330,7 +350,7 @@ export function monthBudget(state, today) {
   const shortfall = plans.reduce((sum, p) => sum + p.shortfall, 0);
   const dueBeforePayday = plans.filter((p) => p.count === 1).reduce((sum, p) => sum + p.remaining, 0);
   const balanceSet = hasBalance(s);
-  const months = monthlyOutlook(s, plans, starts, balanceSet);
+  const months = monthlyOutlook(s, plans, starts, balanceSet, spent);
   const salary = salaryFor(s, period.start);
   return {
     period,
@@ -358,10 +378,10 @@ export function monthBudget(state, today) {
 
 // 월별 전망: 월급 주기마다 모을 돈과 쓸 수 있는 돈.
 // 쓸 수 있는 돈은 생활비를 포함한 금액이다.
-//   이번 달 = 잔고 - 아직 나갈 돈 - 이번 달에 모을 돈 - 이번 달이 기한인데 못 채운 금액
+//   이번 달 = 잔고 - 아직 나갈 돈 - 잔고 고친 뒤 쓴 큰 돈 - 이번 달에 모을 돈 - 이번 달이 기한인데 못 채운 금액
 //   다음 달부터 = 월급 - 고정지출 - 적금 - 그 달에 모을 돈 - 그 달이 기한인데 못 채운 금액
 // 잔고를 넣은 적이 없으면 이번 달도 월급 기준으로 계산한다.
-export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(settings)) {
+export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(settings), spent = { list: [], counted: 0 }) {
   const n = Math.max(6, starts.length);
   const all = [...starts];
   while (all.length < n + 1) {
@@ -383,7 +403,8 @@ export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(
     const reserve = allocs.reduce((sum, a) => sum + a.amount, 0);
     const shortfall = dues.reduce((sum, d) => sum + d.shortfall, 0);
     const income = k === 0 && balanceSet ? settings.balance - (settings.pendingOut || 0) : salary - costs;
-    const spend = income - reserve - shortfall;
+    const spentNow = k === 0 ? spent.counted : 0;
+    const spend = income - spentNow - reserve - shortfall;
     return {
       k,
       start: all[k],
@@ -393,6 +414,9 @@ export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(
       salaryEdited: salary !== settings.salary || typeof settings.salaryOverrides?.[all[k]] === 'number',
       fixed,
       fixedItems,
+      // 이번 달 큰 지출 (잔고에 아직 안 들어간 것만 spent로 뺀다)
+      spent: spentNow,
+      spends: k === 0 ? spent.list : [],
       reserve,
       spend,
       // 생활비 예산 말고 더 남는 돈 (월급 기준인 달만)
@@ -490,8 +514,8 @@ export function suggestAdjustments(state, today, delays = [1, 2, 3]) {
   };
 }
 
-// ---------- 큰 지출 메모 ----------
-// 이미 쓴 돈을 대충 적어 두는 곳. 잔고에 이미 반영된 돈이라 계산에는 넣지 않는다.
+// ---------- 큰 지출 ----------
+// 이번 달에 나간 큰 돈. 잔고를 고친 뒤에 적은 것만 이번 달 계산에서 뺀다 (spentThisPeriod).
 
 // "렌즈 30", "비행기 55만", "축의 200,000원" 같은 줄(쉼표·줄바꿈으로 여러 개)을 읽는다.
 // 단위 없이 1만 미만 숫자면 만원 단위로 본다.

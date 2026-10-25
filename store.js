@@ -59,6 +59,7 @@ function normalizeState(data) {
     // 지금 통장 잔고(직접 입력)와 고친 날. 넣은 적이 없으면 null.
     balance: s.balance == null || s.balance === '' ? null : int(s.balance),
     balanceUpdatedAt: isValidDate(s.balanceUpdatedAt) ? s.balanceUpdatedAt : null,
+    balanceTs: typeof s.balanceTs === 'string' ? s.balanceTs : null,
     pendingOut: int(s.pendingOut),
     // 그 달만 고친 고정지출 { 월급 주기 시작일: { 항목 id: 금액 } }
     fixedOverrides: Object.fromEntries(
@@ -113,6 +114,7 @@ function normalizeState(data) {
       date: x.date,
       name: x.name.trim().slice(0, 30) || '이름 없음',
       amount: int(x.amount),
+      ...(typeof x.ts === 'string' ? { ts: x.ts } : {}),
       ...(typeof x.planId === 'string' ? { planId: x.planId } : {}),
     }));
   return { version: 1, settings, plans, spends };
@@ -152,6 +154,7 @@ export function createSampleState(today) {
     living: 1200000,
     balance: 900000,
     balanceUpdatedAt: today,
+    balanceTs: new Date().toISOString(),
     pendingOut: 250000,
     salaryOverrides: {},
     fixedOverrides: {},
