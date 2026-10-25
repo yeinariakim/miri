@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.25-6';
+const VERSION = '2026.10.26-1';
 
 const today = () => C.todayStr();
 
@@ -170,14 +170,20 @@ window.addEventListener('hashchange', () => {
 
 // ---------- 홈 ----------
 
+// 남는 돈 칸: 마이너스면 아이콘 + '부족'
+const leftCell = (v) =>
+  v < 0 ? `<b class="num neg">${icon('alertOctagon')}부족 ${won(-v)}</b>` : `<b class="num accent">${won(v)}</b>`;
+
 function viewHome() {
   const t = today();
   const b = C.monthBudget(state, t);
   const sug = C.suggestAdjustments(state, t);
-  const neg = b.spendable !== null && b.spendable < 0;
-  const spendText = b.spendable === null ? '' : won(b.spendable);
+  const [now, next] = b.months;
+  const sp = b.spent;
+  const neg = b.free < 0;
+  const freeText = won(b.free);
+  const spends = [...sp.list].sort((a, c) => ((a.ts || a.date) < (c.ts || c.date) ? 1 : -1));
   const upcoming = b.plans.filter((p) => p.status !== 'done').sort(byDue).slice(0, 3);
-  const noSalary = !b.salary;
 
   $app.innerHTML = `
     <header class="topbar">
@@ -185,157 +191,104 @@ function viewHome() {
         <span class="brand-mark" aria-hidden="true">${appMark()}</span>
         <div>
           <h1 class="brand-name">미리</h1>
-          <p class="brand-sub num">${shortDate(b.period.start)} – ${shortDate(b.period.end)} 기준</p>
+          <p class="brand-sub num">${shortDate(now.start)} – ${shortDate(now.end)}</p>
         </div>
       </div>
       <button class="icon-btn" data-action="open-settings" aria-label="설정 열기">${icon('sliders')}</button>
     </header>
 
     <section class="hero" aria-labelledby="hero-label">
-      <p class="hero-label" id="hero-label">다음 월급날까지 쓸 수 있는 돈</p>
-      ${
-        b.spendable === null
-          ? `<p class="hero-empty">지금 통장 잔고를 넣으면 계산해 드려요.</p>
-             <button class="btn btn-primary btn-sm" data-action="open-settings" data-focus="balance">지금 잔고 입력하기</button>`
-          : `<p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(spendText)}">${spendText}</p>
-             ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 다음 월급날까지 ${won(-b.spendable)}이 모자라요</span></p>` : ''}
-             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} ${b.months[0].spent ? ` − 아직 안 나간 큰 지출 ${won(b.months[0].spent)}` : ''} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
-             ${
-               b.balanceAge >= 2
-                 ? `<button class="stale-btn" data-action="open-settings" data-focus="balance">${icon('clock')}<span>${b.balanceAge}일 전 잔고 기준 · <b>업데이트</b></span></button>`
-                 : ''
-             }`
-      }
-      <div class="hero-sub">
-        <div class="hero-sub-row">
-          <span>이번 달 예상 여유 예산</span>
-          <b class="num ${b.free < 0 ? 'neg' : ''}">${b.free < 0 ? `${icon('alertOctagon')}부족 ` : ''}${won(b.free)}</b>
-        </div>
-        <p class="hero-note">${icon('info')}<span>월급에서 고정지출·적금·생활비·이번 달 준비금을 뺀 <b>예상 예산</b>이에요. 계좌 잔액이 아니에요.</span></p>
+      <p class="hero-label" id="hero-label">${now.label} 남는 돈 <span class="hero-tag">저축할 돈</span></p>
+      <p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(freeText)}">${freeText}</p>
+      ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · ${won(-b.free)} 모자라요</span></p>` : ''}
+      ${b.salary ? splitBar(now, b) : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`}
+      <div class="living-row">
+        <span>생활비 남은 돈</span>
+        <span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span>
       </div>
-      ${
-        noSalary
-          ? `<button class="btn btn-ghost btn-sm" data-action="open-settings">월급부터 입력하기</button>`
-          : ''
-      }
     </section>
 
-    ${monthsMini(b)}
+    <button class="btn btn-primary btn-block" data-action="spend-new">${icon('plus')}지출 넣기</button>
 
-    <section class="card reserve-card">
-      <div class="reserve-head">
-        <span class="round-ic" aria-hidden="true">${icon('wallet')}</span>
-        <div class="reserve-text">
-          <p class="card-label">이번 달 확보해야 할 준비금</p>
-          <p class="amount-lg num accent">${won(b.reserve)}</p>
-        </div>
-      </div>
-      <p class="card-sub">${
-        b.reserve === 0
-          ? '이번 달에 따로 모을 준비금이 없어요.'
-          : b.reserveLeft > 0
-            ? `계획 ${b.plans.filter((p) => p.thisMonth > 0).length}개 · 아직 <b class="num">${won(b.reserveLeft)}</b> 더 확보해야 해요`
-            : `${icon('checkCircle')} 이번 달 준비금을 모두 확보했어요`
-      }</p>
-    </section>
+    ${
+      spends.length
+        ? `<section class="card spend-card">
+             <div class="section-head tight"><h2>${now.label} 지출</h2><span class="muted small num">${spends.length}개</span></div>
+             <ul class="spend-rows">${spends.map(spendRow).join('')}</ul>
+           </section>`
+        : ''
+    }
 
-    ${splitCard(b)}
+    ${
+      next
+        ? `<a class="card next-card" href="#/calendar">
+             <span class="next-label">${next.label}</span>
+             <span class="next-vals num"><span>모을 돈 <b>${won(next.reserve)}</b></span><span>남을 돈 ${leftCell(next.left)}</span></span>
+             ${icon('chevronRight')}
+           </a>`
+        : ''
+    }
+
     ${sug ? suggestionCard(sug) : ''}
 
     <section class="section">
       <div class="section-head">
-        <h2>다가오는 큰 지출</h2>
-        ${state.plans.length ? `<a class="link" href="#/plans">전체 보기${icon('chevronRight')}</a>` : ''}
+        <h2>다가오는 계획</h2>
+        ${state.plans.length ? `<a class="link" href="#/plans">전체${icon('chevronRight')}</a>` : ''}
       </div>
       ${
         upcoming.length
           ? `<ul class="list-card">${upcoming.map(upcomingRow).join('')}</ul>`
-          : `<div class="card empty"><p>${state.plans.length ? '모든 계획을 다 모았어요.' : '아직 계획이 없어요.'}</p><p class="card-sub">생일, 경조사, 여행처럼 미리 알고 있는 지출을 적어 두세요.</p></div>`
+          : `<a class="card empty-link" href="#/new">${icon('plus')}부모님 생신, 여행처럼 미리 아는 큰 지출을 등록해요</a>`
       }
     </section>
-
-    <a class="btn btn-primary btn-block" href="#/new">${icon('plus')}새 계획 추가</a>
   `;
 }
 
-const RELATIVE = ['이번 달', '다음 달'];
-
-const spendCell = (v) =>
-  v < 0
-    ? `<b class="num neg">${icon('alertOctagon')}부족 ${won(-v)}</b>`
-    : `<b class="num accent">${won(v)}</b>`;
-
-function monthsMini(b) {
-  if (!b.salary && b.spendable === null) return '';
+// 월급이 어디로 나뉘는지 한 줄 막대 + 작은 범례
+function splitBar(m, b) {
+  const segs = [
+    { key: 'fixed', label: '고정', v: m.fixed },
+    { key: 'savings', label: '적금', v: b.savings },
+    { key: 'reserve', label: '모으기', v: m.reserve },
+    { key: 'living', label: '생활비', v: m.living },
+    { key: 'spent', label: '지출', v: Math.max(0, m.hit) },
+    { key: 'free', label: '남음', v: Math.max(0, m.left) },
+  ];
+  const total = Math.max(m.salary, segs.reduce((a, x) => a + x.v, 0));
+  const pct = (v) => (total ? (v / total) * 100 : 0);
   return `
-    <section class="card">
-      <div class="section-head tight">
-        <h2>달별 계획</h2>
-        <a class="link" href="#/calendar">월별 전망${icon('chevronRight')}</a>
-      </div>
-      <ul class="month-mini">
-        <li class="mm-head" aria-hidden="true"><span></span><span>모을 돈</span><span>쓸 수 있는 돈</span></li>
-        ${b.months
-          .slice(0, 3)
-          .map(
-            (m) => `<li>
-              <span class="mm-label">${m.label}${RELATIVE[m.k] ? `<small>${RELATIVE[m.k]}</small>` : ''}</span>
-              <span class="num"><span class="sr-only">모을 돈 </span>${won(m.reserve)}</span>
-              <span><span class="sr-only">쓸 수 있는 돈 </span>${spendCell(m.spend)}</span>
-            </li>`,
-          )
-          .join('')}
-      </ul>
-      <p class="card-sub small-note">쓸 수 있는 돈은 생활비를 포함한 금액이에요. ${
-        b.spendable === null ? '' : '이번 달은 잔고 기준, '
-      }다음 달부터는 월급 기준 예상이에요.</p>
-    </section>`;
+    <div class="split" role="img" aria-label="${segs.map((x) => `${x.label} ${won(x.v)}`).join(', ')}">
+      ${segs
+        .filter((x) => x.v > 0)
+        .map((x) => `<i class="seg seg-${x.key}" style="width:${pct(x.v)}%"></i>`)
+        .join('')}
+    </div>
+    <ul class="legend-mini">
+      ${segs
+        .filter((x) => x.v > 0 || x.key === 'free')
+        .map((x) => `<li><span class="dot seg-${x.key}" aria-hidden="true"></span>${x.label}</li>`)
+        .join('')}
+    </ul>`;
+}
+
+const SOURCE_CLASS = { living: 'src-living', plan: 'src-plan', other: 'src-other', income: 'src-income' };
+
+function spendRow(x) {
+  const income = x.source === 'income';
+  const where = x.source === 'plan' && x.planName ? x.planName : C.SOURCES[x.source] || C.SOURCES.other;
+  return `
+    <li>
+      <button class="spend-row" data-action="spend-edit" data-id="${esc(x.id)}">
+        <span class="sr-name">${esc(x.name)}</span>
+        <span class="src ${SOURCE_CLASS[x.source] || 'src-other'}">${esc(where)}</span>
+        <b class="num ${income ? 'plus' : ''}">${income ? '+' : ''}${won(x.amount)}</b>
+      </button>
+    </li>`;
 }
 
 function appMark() {
   return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="var(--accent)"/><rect x="19" y="13" width="29" height="20" rx="5" fill="var(--on-accent)" fill-opacity=".5" transform="rotate(-8 33.5 23)"/><rect x="16" y="24" width="32" height="25" rx="5.5" fill="var(--on-accent)"/><path d="m24.5 36.5 5 5 9.5-10" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-}
-
-function splitCard(b) {
-  if (!b.salary) return '';
-  const segs = [
-    { key: 'fixed', label: `고정지출${state.settings.fixedItems.length ? ` · ${state.settings.fixedItems.length}개` : ''}`, v: b.fixed },
-    { key: 'savings', label: '적금', v: b.savings },
-    { key: 'living', label: '생활비', v: b.living },
-    { key: 'reserve', label: '준비금', v: b.reserve },
-    { key: 'free', label: '여유', v: Math.max(0, b.free) },
-  ];
-  const out = b.fixed + b.savings + b.living + b.reserve;
-  const total = Math.max(b.salary, out);
-  const pct = (v) => (total ? (v / total) * 100 : 0);
-  return `
-    <section class="card">
-      <div class="section-head tight">
-        <h2>월급이 나뉘는 모습</h2>
-        <span class="muted num">${won(b.salary)}</span>
-      </div>
-      <div class="split ${out > b.salary ? 'over' : ''}" role="img" aria-label="${segs
-        .map((s) => `${s.label} ${won(s.v)}`)
-        .join(', ')}">
-        ${segs
-          .filter((s) => s.v > 0)
-          .map((s) => `<i class="seg seg-${s.key}" style="width:${pct(s.v)}%"></i>`)
-          .join('')}
-        ${out > b.salary ? `<span class="split-limit" style="left:${pct(b.salary)}%"></span>` : ''}
-      </div>
-      ${
-        out > b.salary
-          ? `<p class="split-over">${icon('alertOctagon')}<span><b>부족</b> · 나갈 돈이 월급보다 <b class="num">${won(out - b.salary)}</b> 많아요 (세로선이 월급)</span></p>`
-          : ''
-      }
-      <ul class="legend">
-        ${segs
-          .map(
-            (s) => `<li><span class="dot seg-${s.key}" aria-hidden="true"></span><span class="legend-label">${s.label}</span><span class="legend-pct num">${Math.round((b.salary ? s.v / b.salary : 0) * 100)}%</span><span class="legend-v num">${won(s.key === 'free' ? b.free : s.v)}</span></li>`,
-          )
-          .join('')}
-      </ul>
-    </section>`;
 }
 
 function suggestionCard(sug) {
@@ -343,43 +296,21 @@ function suggestionCard(sug) {
   return `
     <section class="card alert-card" aria-labelledby="sug-title">
       <h2 id="sug-title" class="alert-title">${icon('alertOctagon')}<span><b>부족</b> · ${
-        sug.shortfall
-          ? `기한까지 ${won(sug.shortfall)}을 못 모아요`
-          : `이번 달 ${won(sug.overspend)}을 줄여야 해요`
+        sug.shortfall ? `기한까지 ${won(sug.shortfall)} 못 모아요` : `이번 달 ${won(sug.overspend)} 모자라요`
       }</span></h2>
-      <p class="card-sub">자동으로 바꾸지 않아요. '희망' → '조정 가능' 순으로, 날짜를 늦추면 이번 달 준비금과 부족액이 이렇게 바뀌어요. '필수' 계획은 제안에서 뺐어요.</p>
       ${
         items.length
-          ? `<ol class="sug-list">${items
-              .map(
-                (it) => `
-          <li class="sug">
-            <div class="sug-head">
-              <b class="sug-name">${esc(it.name)}</b>${importanceTag(it.importance)}
-            </div>
-            <p class="sug-now">지금 ${dateLabel(it.dueDate)} · 이번 달 <b class="num">${won(it.monthly)}</b></p>
-            <ul class="sug-opts">
-              ${it.options
-                .map(
-                  (o) => `<li><span>+${o.months}개월 <span class="muted">${dateLabel(o.newDate)}</span></span><span class="num">이번 달 <b>${won(o.monthly)}</b> · ${o.deficitAfter > 0 ? `부족 ${won(o.deficitAfter)}` : '<b>부족 해결</b>'}</span></li>`,
-                )
-                .join('')}
-            </ul>
-            <a class="btn btn-ghost btn-sm" href="#/edit/${encodeURIComponent(it.id)}">${icon('pencil')}날짜 바꾸러 가기</a>
-          </li>`,
-              )
-              .join('')}</ol>`
-          : ''
+          ? `<p class="card-sub">이렇게 늦추면 돼요 (필수 계획 제외, 자동으로 바꾸지 않아요)</p>
+             <ul class="sug-lines">${items
+               .map((it) => {
+                 const o = it.options.find((x) => x.deficitAfter < sug.deficit) || it.options[it.options.length - 1];
+                 return `<li><a href="#/edit/${encodeURIComponent(it.id)}"><span><b>${esc(it.name)}</b> ${o.months}개월 늦추기</span><span class="num muted">${
+                   o.deficitAfter > 0 ? `부족 ${won(o.deficitAfter)}` : '해결'
+                 }</span>${icon('chevronRight')}</a></li>`;
+               })
+               .join('')}</ul>`
+          : `<p class="card-sub">늦춰서 해결되는 계획이 없어요. 금액이나 생활비를 조정해 보세요.</p>`
       }
-      <p class="sug-foot">${
-        !sug.items.length
-          ? sug.shortfall
-            ? '희망·조정 가능 계획을 늦춰도 해결되지 않아요. 다음 월급 전에 필요한 계획에 이번 달 잔고가 모자라서 생긴 부족이에요. 잔고와 나갈 돈이 맞는지 확인하거나, 그 계획의 금액·날짜를 조정해 보세요.'
-            : '늦춰서 줄일 수 있는 희망·조정 가능 계획이 없어요. 생활비나 적금 금액을 점검해 보세요.'
-          : sug.uncovered > 0
-            ? `희망·조정 가능 계획을 모두 3개월 늦춰도 <b class="num">${won(sug.uncovered)}</b>이 부족해요. 생활비나 적금도 함께 점검해 보세요.`
-            : `위 ${items.length}개 계획을 3개월씩 늦추면 부족분을 메울 수 있어요.`
-      }</p>
     </section>`;
 }
 
@@ -465,213 +396,91 @@ function planCard(p) {
     </li>`;
 }
 
-// ---------- 달력 (준비 중) ----------
+// ---------- 월별 ----------
 
 function viewCalendar() {
   const b = C.monthBudget(state, today());
   $app.innerHTML = `
     <header class="topbar">
       <div>
-        <h1 class="page-title">월별 전망</h1>
-        <p class="brand-sub">달마다 모을 돈과 쓸 수 있는 돈 (생활비 포함)</p>
+        <h1 class="page-title">월별</h1>
+        <p class="brand-sub">달마다 모을 돈과 남는 돈 · 눌러서 자세히</p>
       </div>
     </header>
-    ${b.months.map((m) => monthCard(m, b)).join('')}
+    <section class="card month-table">
+      <div class="mt-head" aria-hidden="true"><span></span><span>모을 돈</span><span>남는 돈</span></div>
+      ${b.months.map((m) => monthRow(m, b)).join('')}
+    </section>
     ${pastSpends(b)}
-    <p class="hero-note">${icon('info')}<span>계좌 잔액이 아닌 <b>예상</b>이에요. ${
-      b.spendable === null ? '' : '이번 달은 입력한 잔고, '
-    }다음 달부터는 월급 − 고정지출 − 적금 기준이에요. 계획이나 설정을 바꾸면 바로 다시 계산돼요.</span></p>
   `;
-
-  const form = document.getElementById('spend-form');
-  if (form) {
-    const amountInput = form.querySelector('#spend-amount');
-    let amount = 0;
-    bindMoney(amountInput, (v) => (amount = v));
-    form.addEventListener('click', (e) => {
-      const q = e.target.closest('[data-spend-add]');
-      if (q) amount = setMoney(amountInput, amount + Number(q.dataset.spendAdd));
-    });
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const name = form.spendName.value.trim();
-      if (!name) return toast('어디에 쓴 돈인지 적어 주세요.');
-      if (!amount) return toast('금액을 적어 주세요.');
-      const x = { id: S.newId(), date: today(), ts: new Date().toISOString(), name: name.slice(0, 30), amount };
-      if (form.spendPending?.checked) x.pending = true;
-      commit({ ...state, spends: [...(state.spends || []), x] });
-      toast(`${name} ${won(amount)} 넣었어요`);
-      document.getElementById('spend-name')?.focus({ preventScroll: true });
-    });
-  }
 }
 
-// 달마다 "월급에서 무엇을 빼서 얼마가 남는지"를 영수증처럼 보여 준다
-function monthCard(m, b) {
-  const balanceMonth = m.k === 0 && b.spendable !== null;
-  const items = state.settings.fixedItems;
-  const row = (label, amount, { sign = '−', cls = '', sub = '' } = {}) => `
+function billRow(label, amount, { sign = '−', cls = '', sub = '' } = {}) {
+  return `
     <li class="bill-row ${cls}">
       <span class="bill-label"><span class="bill-sign" aria-hidden="true">${sign}</span><span>${label}${sub ? `<small>${sub}</small>` : ''}</span></span>
       <b class="num">${won(amount)}</b>
     </li>`;
-  const planRows = m.allocs
-    .map(
-      (a) =>
-        `<li><button class="bill-sub" data-action="open-plan" data-id="${esc(a.id)}"><span>${esc(a.name)}</span><span class="num">${won(a.amount)}</span></button></li>`,
-    )
-    .join('');
-
-  return `
-    <section class="card month-card ${m.k === 0 ? 'current' : ''}">
-      <div class="mc-head">
-        <h2>${m.label}${RELATIVE[m.k] ? ` <span class="mc-rel">${RELATIVE[m.k]}</span>` : ''}</h2>
-        <span class="muted small num">${shortDate(m.start)} – ${shortDate(m.end)}</span>
-      </div>
-
-      <ul class="bill">
-        ${
-          balanceMonth
-            ? `${row('지금 통장 잔고', b.balance, { sign: '', cls: 'bill-start' })}
-               ${row('아직 나갈 돈', b.pendingOut, { sub: '카드값, 아직 안 빠진 고정지출·적금' })}
-               ${spentRows(m, true)}`
-            : `${row('월급', m.salary, { sign: '', cls: 'bill-start', sub: m.salaryEdited ? `이 달 실제 금액 · 기본 ${won(b.salaryBase)}` : '기본 월급' })}
-               ${row(`고정지출${items.length ? ` · ${items.length}개` : ''}`, m.fixed, {
-                 sub: m.fixedItems
-                   .map((it) => (it.edited ? `<b class="edited">${esc(it.name)} ${won(it.amount)}</b>` : esc(it.name)))
-                   .join(' · '),
-               })}
-               ${row('적금', b.savings)}
-               ${m.k === 0 ? spentRows(m, false) : ''}`
-        }
-        ${row('계획에 따로 모을 돈', m.reserve, { sub: m.allocs.length ? '' : '이 달엔 없어요' })}
-        ${planRows ? `<li><ul class="bill-subs">${planRows}</ul></li>` : ''}
-        ${m.shortfall ? row('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
-        <li class="bill-row bill-total">
-          <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>쓸 수 있는 돈<small>생활비 포함</small></span></span>
-          ${spendCell(m.spend)}
-        </li>
-      </ul>
-      <div class="salary-line">
-        <span class="small muted num">${monthEditSummary(m, balanceMonth)}</span>
-        <button type="button" class="chip-btn" data-action="edit-salary" data-start="${m.start}">${icon('pencil')}이 달 금액 고치기</button>
-      </div>
-      <p class="pv-note num">${
-        balanceMonth
-          ? '다음 월급날까지 생활비까지 포함해서 쓸 수 있는 돈이에요. 고정지출·적금은 이미 빠졌으면 잔고에 반영돼 있고, 아직이면 \'아직 나갈 돈\'에 넣어야 빠져요.'
-          : m.extra === 0
-            ? `생활비 ${won(b.living)}만큼 쓸 수 있어요.`
-            : m.extra > 0
-              ? `생활비 ${won(b.living)}을 쓰고도 <b>${won(m.extra)}</b> 더 남아요.`
-              : `생활비 ${won(b.living)}보다 ${won(-m.extra)} 적어요.`
-      }</p>
-
-      ${
-        m.dues.length
-          ? `<div class="mc-list">
-               <p class="mc-list-title">이 달에 나갈 큰 지출 <span class="muted">· 모아 둔 돈에서 나가요</span></p>
-               <ul>${m.dues
-                 .map(
-                   (d) =>
-                     `<li><button class="mc-item" data-action="open-plan" data-id="${esc(d.id)}"><span>${esc(d.name)}</span><b class="num">${won(d.amount)}</b></button>${
-                       d.shortfall
-                         ? `<span class="short-line">${icon('alertOctagon')}<span><b>부족</b> · ${won(d.shortfall)}을 못 모아요. 그만큼 위 '쓸 수 있는 돈'에서 뺐어요.</span></span>`
-                         : ''
-                     }</li>`,
-                 )
-                 .join('')}</ul>
-             </div>`
-          : ''
-      }
-      ${m.k === 0 ? spendMemo(m) : ''}
-    </section>`;
 }
 
-// 이번 달 큰 지출 줄: 잔고에 아직 안 들어간 것만 뺀다
-// 이번 달 큰 지출 줄. 잔고를 넣었으면 '아직 안 나감'만 빼고, 나머지는 잔고에 반영됐다고 적어만 둔다.
-function spentRows(m, balanceMonth) {
-  if (!m.spends.length) return '';
-  const counted = m.spends.filter((x) => !x.reflected);
-  const reflected = m.spends.filter((x) => x.reflected).reduce((sum, x) => sum + x.amount, 0);
-  const subs = counted.length
-    ? `<li><ul class="bill-subs">${counted
-        .map((x) => `<li class="bill-sub"><span>${esc(x.name)}</span><span class="num">${won(x.amount)}</span></li>`)
+const billSubs = (rows) =>
+  rows.length
+    ? `<li><ul class="bill-subs">${rows
+        .map(([name, v, id]) =>
+          id
+            ? `<li><button class="bill-sub" data-action="open-plan" data-id="${esc(id)}"><span>${esc(name)}</span><span class="num">${v}</span></button></li>`
+            : `<li class="bill-sub"><span>${esc(name)}</span><span class="num">${v}</span></li>`,
+        )
         .join('')}</ul></li>`
     : '';
-  const main = counted.length
-    ? `<li class="bill-row"><span class="bill-label"><span class="bill-sign" aria-hidden="true">−</span><span>${
-        balanceMonth ? '아직 안 나간 큰 지출' : '이번 달 큰 지출'
-      }</span></span><b class="num">${won(m.spent)}</b></li>${subs}`
-    : '';
-  const note =
-    balanceMonth && reflected
-      ? `<li class="bill-note">이번 달 큰 지출 ${won(reflected)}은 이미 통장에서 나가서 잔고에 반영돼 있어요 (다시 빼지 않아요)</li>`
-      : '';
-  return main + note;
-}
 
-function monthEditSummary(m, balanceMonth) {
-  const edited = [...(m.salaryEdited ? ['월급'] : []), ...m.fixedItems.filter((it) => it.edited).map((it) => it.name)];
-  const head = balanceMonth ? `이 달 월급 ${won(m.salary)}${m.salaryEdited ? ' (실제)' : ' (기본)'} · 잔고에 이미 들어 있어요` : '';
-  const tail = edited.length ? `이 달만 고친 금액: ${edited.join(', ')}` : balanceMonth ? '' : '기본 금액으로 계산했어요';
-  return [head, tail].filter(Boolean).join(' · ');
-}
-
-const spendItem = (x) => {
-  const plan = x.planId && state.plans.find((p) => p.id === x.planId);
-  return `<li class="spend-item">
-    <span class="spend-name">${esc(x.name)}${
-      x.reflected === undefined
-        ? ''
-        : !C.hasBalance(state.settings)
-          ? '<small class="counted">이번 달 계산에서 뺌</small>'
-          : `<button type="button" class="tag-btn ${x.pending ? 'on' : ''}" data-action="spend-toggle" data-id="${esc(x.id)}" aria-pressed="${x.pending ? 'true' : 'false'}">${
-              x.pending ? '아직 안 나감' : '통장에서 나감'
-            }</button>`
-    }</span>
-    <b class="num">${won(x.amount)}</b>
-    ${
-      plan
-        ? `<button type="button" class="chip-btn ghost" data-action="open-plan" data-id="${esc(plan.id)}">${icon('check')}내년 계획</button>`
-        : `<button type="button" class="chip-btn" data-action="spend-repeat" data-id="${esc(x.id)}">내년에도</button>`
-    }
-    <button type="button" class="icon-btn fixed-del" data-action="spend-del" data-id="${esc(x.id)}" aria-label="${esc(x.name)} 지우기">${icon('x')}</button>
-  </li>`;
-};
-
-function spendMemo(m) {
-  const list = m.spends;
-  const total = list.reduce((sum, x) => sum + x.amount, 0);
-  const balanceSet = C.hasBalance(state.settings);
+function monthRow(m, b) {
+  const items = m.fixedItems;
+  const sp = m.spent;
+  const spentSubs = sp
+    ? [
+        sp.other && ['그 외 지출', won(sp.other)],
+        sp.livingOver && ['생활비 초과', won(sp.livingOver)],
+        sp.planExtra && ['계획보다 더 씀', won(sp.planExtra)],
+        sp.income && ['들어온 돈', `+${won(sp.income)}`],
+        sp.returned && ['계획에서 남은 돈', `+${won(sp.returned)}`],
+      ].filter(Boolean)
+    : [];
   return `
-    <div class="memo-box">
-      <p class="mc-list-title">이번 달 큰 지출 ${list.length ? `<span class="num">· ${list.length}개 · 합계 ${won(total)}</span>` : ''}</p>
-      <p class="field-hint">${
-        balanceSet
-          ? "이미 통장에서 나간 돈은 잔고에 들어 있으니 다시 빼지 않아요. 카드값처럼 아직 안 나간 것만 '아직 안 나감'으로 바꾸면 이번 달 쓸 수 있는 돈에서 빼요. 나가고 나면 다시 눌러 '통장에서 나감'으로 바꾸고 잔고를 고쳐 주세요."
-          : '이번 달 쓸 수 있는 돈에서 빼요.'
-      } 내년에도 있을 지출은 '내년에도'를 누르면 1년 뒤 같은 날짜로 계획이 만들어져요.</p>
-      ${list.length ? `<ul class="spend-list">${list.map(spendItem).join('')}</ul>` : ''}
-      <form class="spend-add" id="spend-form" autocomplete="off" novalidate>
-        <div class="spend-add-row">
-          <input class="input" id="spend-name" name="spendName" maxlength="30" placeholder="어디에 (예: 렌즈)" aria-label="지출 이름">
-          ${moneyField('spend-amount', 0)}
-        </div>
+    <details class="mrow" ${m.k === 0 ? 'open' : ''}>
+      <summary>
+        <span class="mr-label">${m.label}${m.k === 0 ? '<small>이번 달</small>' : m.k === 1 ? '<small>다음 달</small>' : ''}</span>
+        <span class="num">${won(m.reserve)}</span>
+        <span>${leftCell(m.left)}</span>
+      </summary>
+      <div class="mr-body">
+        <ul class="bill">
+          ${billRow('월급', m.salary, { sign: '', cls: 'bill-start', sub: m.salaryEdited ? `이 달만 고침 · 기본 ${won(b.salaryBase)}` : '' })}
+          ${billRow(`고정지출`, m.fixed, {
+            sub: items.map((it) => (it.edited ? `<b class="edited">${esc(it.name)} ${won(it.amount)}</b>` : esc(it.name))).join(' · '),
+          })}
+          ${billRow('적금', b.savings)}
+          ${billRow('생활비', m.living)}
+          ${billRow('모으기', m.reserve)}
+          ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
+          ${m.hit ? billRow(m.hit > 0 ? '이번 달 지출' : '이번 달 더해진 돈', Math.abs(m.hit), { sign: m.hit > 0 ? '−' : '+' }) : ''}
+          ${billSubs(spentSubs)}
+          ${m.shortfall ? billRow('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
+          <li class="bill-row bill-total">
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>남는 돈</span></span>
+            ${leftCell(m.left)}
+          </li>
+        </ul>
         ${
-          balanceSet
-            ? `<label class="check-line"><input type="checkbox" name="spendPending"><span>아직 통장에서 안 나갔어요 (카드값 등)</span></label>`
+          m.dues.length
+            ? `<p class="mr-dues">${icon('calendar')}<span>이 달에 쓸 계획: ${m.dues
+                .map((d) => `${esc(d.name)} ${won(d.amount)}${d.shortfall ? ` <b class="neg">(부족 ${won(d.shortfall)})</b>` : ''}`)
+                .join(', ')}</span></p>`
             : ''
         }
-        <div class="spend-add-row2">
-          <span class="quick" role="group" aria-label="빠르게 더하기">
-            <button type="button" class="chip-btn" data-spend-add="10000">+1만</button>
-            <button type="button" class="chip-btn" data-spend-add="50000">+5만</button>
-            <button type="button" class="chip-btn" data-spend-add="100000">+10만</button>
-          </span>
-          <button type="submit" class="btn btn-primary btn-sm">${icon('plus')}넣기</button>
-        </div>
-      </form>
-    </div>`;
+        <button type="button" class="chip-btn mr-edit" data-action="edit-salary" data-start="${m.start}">${icon('pencil')}이 달 월급·고정지출 고치기</button>
+      </div>
+    </details>`;
 }
 
 function pastSpends(b) {
@@ -680,25 +489,25 @@ function pastSpends(b) {
   for (const x of (state.spends || []).filter((x) => x.date < start)) {
     const p = C.currentPeriod(x.date, state.settings.payday).start;
     if (!groups.has(p)) groups.set(p, []);
-    groups.get(p).push(x);
+    groups.get(p).push({ ...x, source: x.source || 'other' });
   }
   if (!groups.size) return '';
   return `
     <section class="card">
-      <h2 class="sub-title">지난 달 쓴 큰 돈</h2>
+      <h2 class="sub-title">지난 달 지출</h2>
       ${[...groups.entries()]
         .sort((a, c) => (a[0] < c[0] ? 1 : -1))
         .map(
           ([p, list]) => `<details class="past">
-            <summary><span>${C.parseDate(addDaysLabel(p)).y}년 ${C.periodLabel(p)}</span><b class="num">${won(list.reduce((sum, x) => sum + x.amount, 0))}</b></summary>
-            <ul class="spend-list">${list.map(spendItem).join('')}</ul>
+            <summary><span>${C.parseDate(C.addDays(p, 15)).y}년 ${C.periodLabel(p)}</span><b class="num">${won(
+              list.filter((x) => x.source !== 'income').reduce((sum, x) => sum + x.amount, 0),
+            )}</b></summary>
+            <ul class="spend-rows">${list.map(spendRow).join('')}</ul>
           </details>`,
         )
         .join('')}
     </section>`;
 }
-
-const addDaysLabel = (start) => C.addDays(start, 15);
 
 // ---------- 새 계획 추가 / 수정 ----------
 
@@ -833,7 +642,6 @@ function viewForm(r) {
     if (canCalc && draft.saved <= draft.amount && (!editing || draft.amount >= savedNow)) {
       const pv = C.previewPlan(state, draftPlan(), t, editing ? editing.id : null);
       const neg = pv.freeAfter < 0;
-      const spendChanged = pv.spendableBefore !== null && pv.spendableBefore !== pv.spendableAfter;
       $preview.className = 'preview';
       $preview.innerHTML = `
         <div class="pv-grid">
@@ -850,19 +658,13 @@ function viewForm(r) {
         ${shortLine(pv)}
         ${
           pv.count === 1
-            ? `<p class="pv-note">다음 월급 전에 필요한 날짜라 남은 금액을 이번 달에 모두 준비해요.</p>`
+            ? `<p class="pv-note">다음 월급 전이라 이번 달에 모두 모아요.</p>`
             : ''
         }
         <div class="pv-free">
-          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 여유 예산</p>
+          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 남는 돈</p>
           <p class="pv-change num"><span>${won(pv.freeBefore)}</span>${icon('chevronRight')}<b class="${neg ? 'neg' : 'accent'}">${won(pv.freeAfter)}</b></p>
-          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>부족</b> · 여유 예산이 마이너스가 돼요. 저장한 뒤 홈에서 조정 제안을 볼 수 있어요.</span></p>` : ''}
-          ${
-            spendChanged
-              ? `<p class="pv-label">다음 월급날까지 쓸 수 있는 돈</p>
-                 <p class="pv-change num"><span>${won(pv.spendableBefore)}</span>${icon('chevronRight')}<b class="${pv.spendableAfter < 0 ? 'neg' : 'accent'}">${won(pv.spendableAfter)}</b></p>`
-              : ''
-          }
+          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>부족</b> · 남는 돈이 마이너스가 돼요</span></p>` : ''}
         </div>`;
     } else {
       $preview.className = 'preview empty-pv';
@@ -958,8 +760,8 @@ function viewForm(r) {
 
 let sheet = null; // { type: 'plan' | 'settings', id, opener }
 
-function openSheet(type, id = null) {
-  sheet = { type, id, opener: document.activeElement };
+function openSheet(type, id = null, extra = {}) {
+  sheet = { type, id, opener: document.activeElement, ...extra };
   $sheetRoot.innerHTML = `
     <div class="sheet-backdrop" data-action="close-sheet"></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
@@ -986,6 +788,7 @@ function closeSheet({ restoreFocus = true } = {}) {
 function refreshSheet() {
   if (!sheet) return;
   if (sheet.type === 'plan' && !state.plans.some((p) => p.id === sheet.id)) return closeSheet();
+  if (sheet.type === 'spend' && sheet.id && !state.spends.some((x) => x.id === sheet.id)) return closeSheet();
   fillSheet();
 }
 
@@ -996,6 +799,9 @@ function fillSheet() {
   if (sheet.type === 'plan') {
     body.innerHTML = planSheetHTML(sheet.id);
     bindPlanSheet(body, sheet.id);
+  } else if (sheet.type === 'spend') {
+    body.innerHTML = spendSheetHTML();
+    bindSpendSheet(body);
   } else if (sheet.type === 'salary') {
     body.innerHTML = salarySheetHTML(sheet.id);
     bindSalarySheet(body, sheet.id);
@@ -1004,6 +810,177 @@ function fillSheet() {
     bindSettingsSheet(body);
   }
   sheetEl.scrollTop = scroll;
+}
+
+// --- 지출 넣기 / 고치기 ---
+
+// 계획에서 쓴 지출이 하나도 없으면 그 계획을 다시 준비 중으로
+function syncPlanStages(plans, spends, touched) {
+  return plans.map((p) => {
+    if (!touched.includes(p.id)) return p;
+    const used = spends.some((x) => x.source === 'plan' && x.planId === p.id);
+    if (used) return { ...p, stage: 'spent' };
+    return p.stage === 'spent' ? { ...p, stage: 'active' } : p;
+  });
+}
+
+function spendSheetHTML() {
+  const x = sheet.id ? state.spends.find((y) => y.id === sheet.id) : null;
+  if (!sheet.draft) {
+    sheet.draft = x
+      ? { name: x.name, amount: x.amount, source: x.source || 'other', planId: x.planId || '' }
+      : { name: '', amount: 0, source: 'living', planId: '', ...(sheet.preset || {}) };
+  }
+  const d = sheet.draft;
+  const income = d.source === 'income';
+  const plans = state.plans.filter((p) => C.isActive(p) || p.id === d.planId);
+  const chosen = state.plans.find((p) => p.id === d.planId);
+  const repeat = x?.repeatId && state.plans.find((p) => p.id === x.repeatId);
+  return `
+    <div class="sheet-head">
+      <div class="sheet-title-wrap"><h2 id="sheet-title" class="sheet-title">${income ? '들어온 돈' : x ? '지출 고치기' : '지출 넣기'}</h2></div>
+      <button class="icon-btn" data-action="close-sheet" aria-label="닫기">${icon('x')}</button>
+    </div>
+    <form id="spend-form" class="form" novalidate autocomplete="off">
+      <div class="spend-add-row">
+        <input class="input" name="name" maxlength="30" placeholder="${income ? '예: 환급' : '어디에 (예: 렌즈)'}" aria-label="이름" value="${esc(d.name)}">
+        ${moneyField('spend-amount', d.amount)}
+      </div>
+      <span class="quick" role="group" aria-label="빠르게 더하기">
+        <button type="button" class="chip-btn" data-add="10000">+1만</button>
+        <button type="button" class="chip-btn" data-add="50000">+5만</button>
+        <button type="button" class="chip-btn" data-add="100000">+10만</button>
+      </span>
+      ${
+        income
+          ? ''
+          : `<fieldset class="field">
+               <legend class="field-label">어디서 나갔어요?</legend>
+               <div class="chips src-chips">
+                 ${['living', 'plan', 'other']
+                   .map(
+                     (k) => `<label class="chip"><input type="radio" name="source" value="${k}" ${d.source === k ? 'checked' : ''}><span>${C.SOURCES[k]}</span></label>`,
+                   )
+                   .join('')}
+               </div>
+               ${
+                 d.source === 'plan'
+                   ? plans.length
+                     ? `<select class="input" name="planId" aria-label="어느 계획">
+                          <option value="">계획 고르기</option>
+                          ${plans
+                            .map((p) => `<option value="${esc(p.id)}" ${p.id === d.planId ? 'selected' : ''}>${esc(p.name)} · 모아 둔 돈 ${won(C.savedTotal(p))}</option>`)
+                            .join('')}
+                        </select>
+                        ${chosen ? `<span class="field-hint">모아 둔 돈에서 나가고, 이 계획은 '지출 완료'가 돼요.</span>` : ''}`
+                     : `<span class="field-hint">준비 중인 계획이 없어요.</span>`
+                   : `<span class="field-hint">${d.source === 'living' ? '생활비에서 빠져요.' : '남는 돈에서 바로 빠져요.'}</span>`
+               }
+             </fieldset>`
+      }
+      <div class="rec-actions">
+        ${x ? `<button type="button" class="btn btn-danger-ghost" data-spend-del><span>지우기</span></button>` : '<span></span>'}
+        <button type="submit" class="btn btn-primary">${x ? '저장' : '넣기'}</button>
+      </div>
+      <div class="spend-links">
+        <button type="button" class="text-btn" data-spend-income>${income ? '지출로 바꾸기' : '+ 들어온 돈이에요'}</button>
+        ${
+          x && !income && d.source !== 'plan'
+            ? repeat
+              ? `<button type="button" class="text-btn" data-action="open-plan" data-id="${esc(repeat.id)}">${icon('check')}내년 계획 있음</button>`
+              : `<button type="button" class="text-btn" data-spend-repeat>내년에도 있어요</button>`
+            : ''
+        }
+      </div>
+    </form>`;
+}
+
+function bindSpendSheet(body) {
+  const form = body.querySelector('#spend-form');
+  const d = sheet.draft;
+  const x = sheet.id ? state.spends.find((y) => y.id === sheet.id) : null;
+  const amountInput = form.querySelector('#spend-amount');
+  bindMoney(amountInput, (v) => (d.amount = v));
+  form.name.addEventListener('input', () => (d.name = form.name.value));
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'source') {
+      d.source = e.target.value;
+      fillSheet();
+    } else if (e.target.name === 'planId') {
+      d.planId = e.target.value;
+      const p = state.plans.find((y) => y.id === d.planId);
+      if (p && !d.name) d.name = p.name;
+      if (p && !d.amount) d.amount = p.amount;
+      fillSheet();
+    }
+  });
+  form.addEventListener('click', (e) => {
+    const q = e.target.closest('[data-add]');
+    if (q) d.amount = setMoney(amountInput, d.amount + Number(q.dataset.add));
+    if (e.target.closest('[data-spend-income]')) {
+      d.source = d.source === 'income' ? 'living' : 'income';
+      fillSheet();
+    }
+    if (e.target.closest('[data-spend-repeat]')) {
+      const t = today();
+      let dueDate = C.addMonths(x.date, 12);
+      if (dueDate < t) dueDate = C.addMonths(t, 12);
+      const plan = {
+        id: S.newId(),
+        name: x.name,
+        category: '기타',
+        amount: x.amount,
+        dueDate,
+        importance: 'flex',
+        stage: 'active',
+        notes: '',
+        createdAt: new Date().toISOString(),
+        baselineMonthly: 0,
+        history: [],
+      };
+      plan.baselineMonthly = C.planMonth(plan, state.settings, t).monthlyNeed;
+      commit({
+        ...state,
+        plans: [...state.plans, plan],
+        spends: state.spends.map((y) => (y.id === x.id ? { ...y, repeatId: plan.id } : y)),
+      });
+      toast(`${dateLabel(dueDate, { year: true })} '${x.name}' 계획을 만들었어요`);
+    }
+    const del = e.target.closest('[data-spend-del]');
+    if (del) {
+      if (!del.dataset.confirm) {
+        del.dataset.confirm = '1';
+        del.querySelector('span').textContent = '정말 지우기';
+        return;
+      }
+      const spends = state.spends.filter((y) => y.id !== x.id);
+      closeSheet();
+      commit({ ...state, spends, plans: syncPlanStages(state.plans, spends, [x.planId].filter(Boolean)) });
+      toast('지웠어요');
+    }
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!d.amount) return toast('금액을 넣어 주세요.');
+    if (d.source === 'plan' && !d.planId) return toast('어느 계획에서 썼는지 골라 주세요.');
+    const fallback = { living: '생활비 지출', plan: '계획 지출', other: '지출', income: '들어온 돈' };
+    const item = {
+      id: x ? x.id : S.newId(),
+      date: x ? x.date : today(),
+      ts: x?.ts || new Date().toISOString(),
+      name: d.name.trim().slice(0, 30) || fallback[d.source],
+      amount: d.amount,
+      source: d.source,
+      ...(d.source === 'plan' ? { planId: d.planId } : {}),
+      ...(x?.repeatId ? { repeatId: x.repeatId } : {}),
+    };
+    const spends = x ? state.spends.map((y) => (y.id === x.id ? item : y)) : [...state.spends, item];
+    const touched = [x?.planId, item.planId].filter(Boolean);
+    closeSheet();
+    commit({ ...state, spends, plans: syncPlanStages(state.plans, spends, touched) });
+    toast(x ? '고쳤어요' : `${item.name} ${won(item.amount)} 넣었어요`);
+  });
+  if (!x) form.name.focus({ preventScroll: true });
 }
 
 // --- 그 달 월급 ---
@@ -1223,6 +1200,11 @@ function bindPlanSheet(body, id) {
     const rec = e.target.closest('[data-rec]');
     const del = e.target.closest('[data-action="delete-plan"]');
     const stageBtn = e.target.closest('[data-stage]');
+    if (stageBtn?.dataset.stage === 'spent') {
+      const plan = state.plans.find((p) => p.id === id);
+      openSheet('spend', null, { preset: { source: 'plan', planId: id, name: plan.name, amount: plan.amount } });
+      return;
+    }
     if (stageBtn) {
       const stage = stageBtn.dataset.stage;
       const plan = state.plans.find((p) => p.id === id);
@@ -1283,20 +1265,6 @@ function settingsSheetHTML() {
     </div>
 
     <form id="settings-form" class="form" novalidate>
-      <div class="balance-box">
-        <div class="field">
-          <label class="field-label" for="balance">지금 통장 잔고</label>
-          ${moneyField('balance', s.balance, '0')}
-          <span class="field-hint">${
-            C.hasBalance(s) ? `${dateLabel(s.balanceUpdatedAt, { year: true })}에 고쳤어요. ` : ''
-          }은행 앱을 보고 직접 적어요. 이미 확보해 둔 준비금은 빼고, 쓰는 통장 잔고만요.</span>
-        </div>
-        <div class="field">
-          <label class="field-label" for="pendingOut">다음 월급 전까지 아직 나갈 돈</label>
-          ${moneyField('pendingOut', s.pendingOut)}
-          <span class="field-hint">카드값, 아직 안 빠진 고정지출 등의 합계. 잔고를 고칠 때 같이 고쳐 주세요.</span>
-        </div>
-      </div>
       <div class="field">
         <label class="field-label" for="salary">기본 월급 (실수령)</label>
         ${moneyField('salary', s.salary)}
@@ -1364,7 +1332,7 @@ function bindSettingsSheet(body) {
     const fixed = C.fixedTotal(vals);
     $fixedTotal.textContent = `합계 ${won(fixed)}`;
     const left = vals.salary - fixed - vals.savings - vals.living;
-    $sum.innerHTML = `준비금을 빼기 전 남는 돈 <b class="num ${left < 0 ? 'neg' : ''}">${won(left)}</b>`;
+    $sum.innerHTML = `매달 모으기·저축에 쓸 수 있는 돈 <b class="num ${left < 0 ? 'neg' : ''}">${won(left)}</b>`;
   };
 
   function renderFixed(focus) {
@@ -1415,14 +1383,6 @@ function bindSettingsSheet(body) {
   });
   renderFixed();
 
-  let balanceTouched = false;
-  for (const key of ['balance', 'pendingOut']) {
-    bindMoney(form.querySelector(`#${key}`), (v) => {
-      vals[key] = v;
-      balanceTouched = true;
-    });
-  }
-
   for (const key of ['salary', 'savings', 'living']) {
     bindMoney(form.querySelector(`#${key}`), (v) => {
       vals[key] = v;
@@ -1437,14 +1397,7 @@ function bindSettingsSheet(body) {
     const fixedItems = vals.fixedItems
       .filter((it) => it.amount > 0)
       .map((it) => ({ ...it, name: it.name.trim() || '이름 없는 항목' }));
-    const balance = balanceTouched
-      ? { balance: vals.balance || 0, balanceUpdatedAt: today(), balanceTs: new Date().toISOString() }
-      : {
-          balance: state.settings.balance,
-          balanceUpdatedAt: state.settings.balanceUpdatedAt,
-          balanceTs: state.settings.balanceTs,
-        };
-    commit({ ...state, settings: { ...vals, ...balance, fixedItems, payday: Number(form.payday.value) } });
+    commit({ ...state, settings: { ...vals, fixedItems, payday: Number(form.payday.value) } });
     toast('설정을 저장했어요');
   });
 
@@ -1500,45 +1453,8 @@ document.addEventListener('click', (e) => {
   }
   else if (a === 'close-sheet') closeSheet();
   else if (a === 'edit-salary') openSheet('salary', el.dataset.start);
-  else if (a === 'spend-toggle') {
-    commit({
-      ...state,
-      spends: state.spends.map((x) => {
-        if (x.id !== el.dataset.id) return x;
-        const { pending, ...rest } = x;
-        return pending ? rest : { ...rest, pending: true };
-      }),
-    });
-  } else if (a === 'spend-del') {
-    commit({ ...state, spends: state.spends.filter((x) => x.id !== el.dataset.id) });
-    toast('메모를 지웠어요');
-  } else if (a === 'spend-repeat') {
-    const x = state.spends.find((y) => y.id === el.dataset.id);
-    if (!x) return;
-    const t = today();
-    let dueDate = C.addMonths(x.date, 12);
-    if (dueDate < t) dueDate = C.addMonths(t, 12);
-    const plan = {
-      id: S.newId(),
-      name: x.name,
-      category: '기타',
-      amount: x.amount,
-      dueDate,
-      importance: 'flex',
-      stage: 'active',
-      notes: `${x.date} 큰 지출 메모에서 만듦`,
-      createdAt: new Date().toISOString(),
-      baselineMonthly: 0,
-      history: [],
-    };
-    plan.baselineMonthly = C.planMonth(plan, state.settings, t).monthlyNeed;
-    commit({
-      ...state,
-      plans: [...state.plans, plan],
-      spends: state.spends.map((y) => (y.id === x.id ? { ...y, planId: plan.id } : y)),
-    });
-    toast(`${dateLabel(dueDate, { year: true })} '${x.name}' 계획을 만들었어요`);
-  }
+  else if (a === 'spend-new') openSheet('spend');
+  else if (a === 'spend-edit') openSheet('spend', el.dataset.id);
   else if (a === 'back' && cameFromApp) {
     e.preventDefault();
     history.back();

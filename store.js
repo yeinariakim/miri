@@ -1,5 +1,5 @@
 // 미리 — 저장 (localStorage) / 백업 / 예시 데이터
-import { CATEGORIES, IMPORTANCE, STAGES, addDays, addMonths, isValidDate, parseDate, planMonth } from './calc.js';
+import { CATEGORIES, IMPORTANCE, SOURCES, STAGES, addDays, addMonths, isValidDate, parseDate, planMonth } from './calc.js';
 
 const KEY = 'miri:v1';
 
@@ -56,11 +56,6 @@ function normalizeState(data) {
     fixedItems: normalizeFixedItems(s),
     savings: int(s.savings),
     living: int(s.living),
-    // 지금 통장 잔고(직접 입력)와 고친 날. 넣은 적이 없으면 null.
-    balance: s.balance == null || s.balance === '' ? null : int(s.balance),
-    balanceUpdatedAt: isValidDate(s.balanceUpdatedAt) ? s.balanceUpdatedAt : null,
-    balanceTs: typeof s.balanceTs === 'string' ? s.balanceTs : null,
-    pendingOut: int(s.pendingOut),
     // 그 달만 고친 고정지출 { 월급 주기 시작일: { 항목 id: 금액 } }
     fixedOverrides: Object.fromEntries(
       Object.entries(s.fixedOverrides && typeof s.fixedOverrides === 'object' ? s.fixedOverrides : {})
@@ -82,7 +77,6 @@ function normalizeState(data) {
         .map(([k, v]) => [k, int(v)]),
     ),
   };
-  if (settings.balance === null) settings.balanceUpdatedAt = null;
   const plans = data.plans
     .filter((p) => p && typeof p.name === 'string' && isValidDate(p.dueDate) && int(p.amount) > 0)
     .map((p) => ({
@@ -115,10 +109,23 @@ function normalizeState(data) {
       name: x.name.trim().slice(0, 30) || '이름 없음',
       amount: int(x.amount),
       ...(typeof x.ts === 'string' ? { ts: x.ts } : {}),
-      ...(x.pending === true ? { pending: true } : {}),
-      ...(typeof x.planId === 'string' ? { planId: x.planId } : {}),
+      ...normalizeSpendSource(x),
     }));
   return { version: 1, settings, plans, spends };
+}
+
+// 지출이 어디서 나갔는지. 예전 데이터(source 없음)는 '그 외'로 보고,
+// 그때의 planId는 '내년에도'로 만든 계획이라 repeatId로 옮긴다.
+function normalizeSpendSource(x) {
+  if (!('source' in x)) {
+    return { source: 'other', ...(typeof x.planId === 'string' ? { repeatId: x.planId } : {}) };
+  }
+  const source = SOURCES[x.source] ? x.source : 'other';
+  return {
+    source,
+    ...(source === 'plan' && typeof x.planId === 'string' ? { planId: x.planId } : {}),
+    ...(typeof x.repeatId === 'string' ? { repeatId: x.repeatId } : {}),
+  };
 }
 
 // 고정지출 항목. 예전 형식(합계 하나)이면 '고정지출' 항목 하나로 옮긴다.
@@ -153,10 +160,6 @@ export function createSampleState(today) {
     fixedItems,
     savings: 500000,
     living: 1200000,
-    balance: 900000,
-    balanceUpdatedAt: today,
-    balanceTs: new Date().toISOString(),
-    pendingOut: 250000,
     salaryOverrides: {},
     fixedOverrides: {},
   };

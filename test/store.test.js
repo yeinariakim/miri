@@ -37,10 +37,6 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
     fixedItems: [],
     savings: 2,
     living: 0,
-    balance: null,
-    balanceUpdatedAt: null,
-    balanceTs: null,
-    pendingOut: 0,
     fixedOverrides: {},
     salaryOverrides: {},
   });
@@ -95,20 +91,30 @@ test('고정지출 항목: 합계로 계산되고, 예전 합계 하나짜리 �
   assert.equal('fixed' in old.settings, false);
 });
 
-test('그 달 월급과 큰 지출 메모도 백업·복원된다', () => {
+test('그 달 월급과 지출도 백업·복원된다', () => {
   const state = createSampleState(today);
   state.settings.salaryOverrides = { '2026-09-25': 3450000, 'bad-key': 1 };
   state.settings.fixedOverrides = { '2026-09-25': { tithe: 350000, bad: 'x' }, nope: { a: 1 } };
   state.spends = [
     { id: 's1', date: today, name: '렌즈', amount: 300000 },
-    { id: 's2', date: today, name: '비행기', amount: 550000, planId: 'p9', pending: true },
+    { id: 's2', date: today, name: '비행기', amount: 550000, planId: 'p9', pending: true }, // 예전 형식
+    { id: 's4', date: today, name: '생신', amount: 300000, source: 'plan', planId: 'p1' },
+    { id: 's5', date: today, name: '선물', amount: 50000, source: 'living', planId: 'x' },
+    { id: 's6', date: today, name: '이상', amount: 50000, source: '???' },
     { id: 's3', date: 'nope', name: '이상함', amount: 1 },
   ];
   const restored = importJSON(exportJSON(state));
   assert.deepEqual(restored.settings.salaryOverrides, { '2026-09-25': 3450000 });
   assert.deepEqual(restored.settings.fixedOverrides, { '2026-09-25': { tithe: 350000 } });
-  assert.deepEqual(restored.spends.map((x) => x.name), ['렌즈', '비행기']);
-  assert.equal(restored.spends[1].planId, 'p9');
-  assert.equal(restored.spends[1].pending, true);
-  assert.equal('pending' in restored.spends[0], false);
+  assert.deepEqual(restored.spends.map((x) => x.name), ['렌즈', '비행기', '생신', '선물', '이상']);
+  // 예전 형식: '그 외'로, 그때의 planId('내년에도'로 만든 계획)는 repeatId로
+  assert.deepEqual(restored.spends[1], { id: 's2', date: today, name: '비행기', amount: 550000, source: 'other', repeatId: 'p9' });
+  assert.deepEqual(
+    restored.spends.slice(2).map((x) => [x.source, x.planId]),
+    [
+      ['plan', 'p1'],
+      ['living', undefined],
+      ['other', undefined],
+    ],
+  );
 });

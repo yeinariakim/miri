@@ -197,8 +197,9 @@ test('못 모으는 계획이 있으면: 희망 → 조정 가능 순으로 늦�
   // 늦춰도 소용없는 경우: 다음 월급 전에 필요한 필수 계획에 이번 달 돈이 모자람
   const stuck = suggestAdjustments(
     {
-      settings: { ...settings, balance: 100000, balanceUpdatedAt: today, pendingOut: 0 },
+      settings,
       plans: [plan('must', 300000, '2026-11-20'), plan('wish', 300000, '2027-03-10', { importance: 'wish' })],
+      spends: [{ id: 'x', date: today, name: '비행기', amount: 600000, source: 'other' }], // 이번 달 100,000만 남음
     },
     today,
   );
@@ -272,17 +273,18 @@ test('오늘 날짜는 한국 시간(Asia/Seoul) 기준', () => {
   assert.equal(todayStr(new Date('2028-02-28T15:30:00Z')), '2028-02-29'); // 윤년
 });
 
-// ---------- 잔고와 유연한 준비금 ----------
+// ---------- 유연한 준비금 / 월별 전망 / 이번 달 지출 ----------
 
-// 매달 준비 가능 금액 = 3,000,000 - 600,000 - 500,000 - 1,200,000 = 700,000
-const withBalance = (balance, extra = {}) => ({
-  ...settings,
-  balance,
-  balanceUpdatedAt: '2026-10-26',
-  pendingOut: 0,
+// 기본 settings의 매달 준비 가능 금액 = 3,000,000 - 600,000 - 500,000 - 1,200,000 = 700,000
+const amounts = (p) => p.schedule.map((x) => x.amount);
+const spend = (id, amount, source = 'other', extra = {}) => ({
+  id,
+  date: '2026-10-26',
+  name: id,
+  amount,
+  source,
   ...extra,
 });
-const amounts = (p) => p.schedule.map((x) => x.amount);
 
 test('달 이름: 그 월급 주기가 주로 걸친 달', () => {
   assert.equal(periodLabel('2026-09-25'), '10월'); // 9/25 ~ 10/24
@@ -290,40 +292,32 @@ test('달 이름: 그 월급 주기가 주로 걸친 달', () => {
   assert.equal(periodLabel('2026-10-01'), '10월');
 });
 
-test('이번 달 잔고가 0이면 이번 달 몫은 다음 달로 넘어간다', () => {
-  const today = '2026-10-24'; // 9/25 ~ 10/24 주기의 마지막 날
-  const b = monthBudget({ settings: withBalance(0), plans: [plan('a', 300000, '2026-12-10')] }, today);
-  const p = b.plans[0];
+test('이번 달 준비 가능 금액을 지출로 다 쓰면 이번 달 몫은 다음 달로 넘어간다', () => {
+  const today = '2026-10-28'; // 10/25 ~ 11/24
+  const state = { settings, plans: [plan('a', 300000, '2027-01-10')], spends: [spend('렌즈', 700000)] };
+  const p = monthBudget(state, today).plans[0];
   assert.equal(p.count, 3);
   assert.deepEqual(amounts(p), [0, 200000, 100000]); // 이번 달 몫 100,000이 다음 달로
-  assert.deepEqual(p.schedule.map((x) => x.label), ['10월', '11월', '12월']);
+  assert.deepEqual(p.schedule.map((x) => x.label), ['11월', '12월', '1월']);
   assert.equal(p.thisMonth, 0);
-  assert.equal(p.shortfall, 0);
   assert.equal(p.status, 'ok');
 });
 
-test('잔고에서 아직 나갈 돈을 뺀 만큼만 이번 달에 준비한다', () => {
-  const today = '2026-10-26';
-  const s = withBalance(500000, { pendingOut: 420000 }); // 이번 달 준비 가능 80,000
-  const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')] }, today);
-  assert.deepEqual(amounts(b.plans[0]), [80000, 220000]);
-});
-
 test('기한을 넘겨서 배분하지 않고, 못 채운 만큼 부족으로 표시', () => {
-  const today = '2026-10-26';
-  const s = withBalance(0, { living: 1800000 }); // 매달 100,000, 이번 달 0
+  const today = '2026-10-28';
+  const s = { ...settings, living: 1800000 }; // 매달 100,000
   const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')] }, today);
   const p = b.plans[0];
-  assert.equal(p.schedule.length, p.count); // 12/10 전 월급 주기(10월·11월)까지만
-  assert.deepEqual(amounts(p), [0, 100000]);
-  assert.equal(p.shortfall, 200000);
+  assert.equal(p.schedule.length, p.count); // 12/10 전 월급 주기까지만
+  assert.deepEqual(amounts(p), [100000, 100000]);
+  assert.equal(p.shortfall, 100000);
   assert.equal(p.status, 'short');
-  assert.equal(b.shortfall, 200000);
+  assert.equal(b.shortfall, 100000);
 });
 
 test('여러 계획이 같은 달에 겹치면 기한 빠른 계획부터 채운다', () => {
   const today = '2026-10-26';
-  const s = withBalance(200000, { living: 1700000 }); // 매달 200,000, 이번 달 200,000
+  const s = { ...settings, living: 1700000 }; // 매달 200,000
   const later = plan('later', 400000, '2026-12-20');
   const sooner = plan('sooner', 300000, '2026-12-10');
   const b = monthBudget({ settings: s, plans: [later, sooner] }, today); // 입력 순서와 무관
@@ -336,98 +330,110 @@ test('여러 계획이 같은 달에 겹치면 기한 빠른 계획부터 채운
 
 test('뒤 달이 모자라면 기한 전 여유 있는 달에 더 넣는다', () => {
   const today = '2026-10-26';
-  const s = withBalance(500000, { living: 1850000 }); // 매달 50,000, 이번 달 500,000
-  const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2027-01-10')] }, today);
+  const s = { ...settings, living: 1850000 }; // 매달 50,000
+  const spends = [spend('환급', 450000, 'income')]; // 이번 달만 500,000
+  const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2027-01-10')], spends }, today);
   assert.deepEqual(amounts(b.plans[0]), [200000, 50000, 50000]);
   assert.equal(b.plans[0].shortfall, 0);
 });
 
-test('다음 월급날까지 쓸 수 있는 돈 = 잔고 - 나갈 돈 - 이번 달에 모을 돈', () => {
+test('이번 달 남는 돈 = 월급 - 고정 - 적금 - 생활비 - 모을 돈 - 이번 달 지출 + 들어온 돈', () => {
   const today = '2026-10-28';
-  const s = withBalance(900000, { pendingOut: 250000, balanceUpdatedAt: '2026-10-25' });
-  const b = monthBudget(
-    {
-      settings: s,
-      plans: [
-        plan('soon', 300000, '2026-11-20', { saved: 100000 }), // 다음 월급(11/25) 전 → 200,000
-        plan('later', 500000, '2027-01-10'), // 빼지 않음
-        { ...plan('spent', 999999, '2026-11-01'), stage: 'spent' }, // 끝난 계획은 빼지 않음
-      ],
-    },
-    today,
-  );
-  assert.equal(b.dueBeforePayday, 200000);
-  // 이번 달에 later 몫(500,000 / 3회 = 166,667)도 떼어 두므로 같이 뺀다
-  assert.equal(b.months[0].reserve, 200000 + 166667);
-  assert.equal(b.spendable, 900000 - 250000 - 200000 - 166667);
-  assert.equal(b.balanceAge, 3);
+  const spends = [
+    spend('렌즈', 100000, 'other'),
+    spend('친구 선물', 1300000, 'living'), // 생활비 1,200,000보다 100,000 넘음
+    spend('환급', 50000, 'income'),
+    { ...spend('지난 달', 999999), date: '2026-10-20' }, // 지난 주기
+  ];
+  const b = monthBudget({ settings, plans: [plan('a', 300000, '2026-12-10')], spends }, today);
+  assert.equal(b.spent.living, 1300000);
+  assert.equal(b.spent.livingLeft, -100000);
+  assert.equal(b.spent.hit, 100000 + 100000 - 50000);
+  assert.equal(b.plans[0].thisMonth, 150000);
+  assert.equal(b.free, 3000000 - 600000 - 500000 - 1200000 - 150000 - 150000);
+  assert.equal(b.months[1].left, 700000 - 150000); // 다음 달은 지출과 상관없음
+});
 
-  const neg = monthBudget({ settings: withBalance(100000), plans: [plan('soon', 300000, '2026-11-20')] }, today);
-  assert.equal(neg.spendable, -200000);
+test('생활비 안에서 쓴 지출은 남는 돈에 영향이 없다', () => {
+  const today = '2026-10-28';
+  const none = monthBudget({ settings, plans: [] }, today);
+  const b = monthBudget({ settings, plans: [], spends: [spend('친구 생일 선물', 50000, 'living')] }, today);
+  assert.equal(b.free, none.free);
+  assert.equal(b.spent.livingLeft, 1150000);
+});
 
-  // 잔고를 넣은 적 없으면 계산하지 않음
-  assert.equal(monthBudget({ settings, plans: [] }, today).spendable, null);
+test('계획에서 쓴 돈: 모아 둔 돈에서 나가고, 차이만 남는 돈에 반영', () => {
+  const today = '2026-10-28';
+  const p = { ...plan('p', 300000, '2026-11-20', { saved: 200000 }), stage: 'spent' };
+  const more = monthBudget({ settings, plans: [p], spends: [spend('생신', 250000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(more.spent.planExtra, 50000); // 모아 둔 200,000보다 50,000 더 씀
+  assert.equal(more.free, 700000 - 50000);
+  assert.deepEqual(more.plans, []); // 끝난 계획은 배분에서 빠짐
+
+  const less = monthBudget({ settings, plans: [p], spends: [spend('생신', 150000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(less.spent.returned, 50000); // 남은 50,000은 돌아옴
+  assert.equal(less.free, 700000 + 50000);
+});
+
+test('이번 달에 확보하고 바로 계획에서 쓴 돈은 이번 달 모은 돈으로 남는다', () => {
+  const today = '2026-10-28';
+  const saved = { history: [{ date: '2026-10-26', delta: 300000 }] };
+  const before = monthBudget({ settings, plans: [plan('p', 300000, '2026-11-20', saved)] }, today);
+  const p = { ...plan('p', 300000, '2026-11-20', saved), stage: 'spent' };
+  const after = monthBudget({ settings, plans: [p], spends: [spend('생신', 300000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(after.reserve, 300000);
+  assert.equal(after.free, before.free); // 쓰고 나도 남는 돈이 갑자기 늘지 않는다
 });
 
 test('미리보기에 월별 준비 일정과 부족액이 나온다', () => {
-  const today = '2026-10-24';
-  const state = { settings: withBalance(0), plans: [] };
+  const today = '2026-10-24'; // 9/25 ~ 10/24
+  const state = { settings, plans: [], spends: [{ ...spend('비행기', 700000), date: '2026-10-24' }] };
   const pv = previewPlan(state, plan('new', 300000, '2026-12-10'), today);
   assert.deepEqual(pv.schedule.map((x) => `${x.label} ${x.amount}`), ['10월 0', '11월 200000', '12월 100000']);
   assert.equal(pv.monthly, 0);
   assert.equal(pv.shortfall, 0);
 });
 
-test('월별 전망: 이번 달 돈이 없으면 다음 달에 모을 돈과 쓸 수 있는 돈이 나온다', () => {
+test('월별 전망: 이번 달 여유가 없으면 다음 달에 모을 돈과 남는 돈이 나온다', () => {
   const today = '2026-10-24';
-  const b = monthBudget({ settings: withBalance(50000), plans: [plan('a', 300000, '2026-12-10')] }, today);
+  const state = {
+    settings,
+    plans: [plan('a', 300000, '2026-12-10')],
+    spends: [{ ...spend('비행기', 650000), date: '2026-10-24' }],
+  };
+  const b = monthBudget(state, today);
   assert.equal(b.months.length, 6); // 최소 6개월
   const [oct, nov, dec, jan] = b.months;
   assert.deepEqual([oct.label, nov.label, dec.label, jan.label], ['10월', '11월', '12월', '1월']);
   assert.deepEqual([oct.start, oct.end], ['2026-09-25', '2026-10-24']);
-
-  // 이번 달: 잔고 50,000을 다 모으면 쓸 수 있는 돈 0
   assert.equal(oct.reserve, 50000);
-  assert.equal(oct.spend, 0);
-  assert.equal(oct.extra, null);
-  // 다음 달: 남은 몫 + 이번 달에서 넘어온 50,000 = 150,000
-  assert.equal(nov.reserve, 150000);
-  assert.equal(nov.spend, 3000000 - 600000 - 500000 - 150000); // 생활비 포함
-  assert.equal(nov.extra, nov.spend - 1200000); // 생활비 말고 더 남는 돈
+  assert.equal(oct.left, 0);
+  assert.equal(nov.reserve, 150000); // 이번 달에 못 넣은 50,000이 넘어옴
+  assert.equal(nov.left, 700000 - 150000);
   assert.deepEqual(nov.allocs, [{ id: 'a', name: 'a', amount: 150000 }]);
-  // 12/10에 쓰는 계획은 12월(11/25 ~ 12/24)에 지출 예정
   assert.deepEqual(dec.dues, [{ id: 'a', name: 'a', amount: 300000, shortfall: 0 }]);
   assert.equal(dec.reserve, 100000);
   assert.equal(jan.reserve, 0);
-  assert.equal(jan.spend, 1900000);
+  assert.equal(jan.left, 700000);
 });
 
-test('월별 전망: 기한인 달에 못 채운 금액은 그 달 쓸 수 있는 돈에서 빠진다', () => {
+test('월별 전망: 기한인 달에 못 채운 금액은 그 달 남는 돈에서 빠진다', () => {
   const today = '2026-10-26';
-  const s = withBalance(0, { living: 1800000 }); // 매달 100,000
+  const s = { ...settings, living: 1800000 }; // 매달 100,000
   const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')] }, today);
   const [, nov] = b.months;
   assert.equal(nov.reserve, 100000);
-  assert.equal(nov.shortfall, 200000);
-  assert.equal(nov.spend, 3000000 - 600000 - 500000 - 100000 - 200000);
+  assert.equal(nov.shortfall, 100000);
+  assert.equal(nov.left, 100000 - 100000 - 100000);
 });
-
-test('월별 전망: 잔고를 넣은 적 없으면 이번 달도 월급 기준', () => {
-  const b = monthBudget({ settings, plans: [plan('a', 300000, '2026-12-10')] }, '2026-10-26');
-  assert.equal(b.months[0].reserve, 150000);
-  assert.equal(b.months[0].spend, 3000000 - 600000 - 500000 - 150000);
-  assert.equal(b.spendable, null);
-});
-
-// ---------- 그 달 월급 / 큰 지출 메모 ----------
 
 test('그 달만 실제 월급으로 고치면 그 달 계산에만 반영된다', () => {
   const today = '2026-10-26'; // 이번 주기 10/25 ~ 11/24, 다음 11/25 ~
-  const s = { ...withBalance(0), salaryOverrides: { '2026-11-25': 3300000 } }; // 다음 달 +300,000
+  const s = { ...settings, salaryOverrides: { '2026-11-25': 3300000 } }; // 다음 달 +300,000
   assert.equal(salaryFor(s, '2026-11-25'), 3300000);
   assert.equal(salaryFor(s, '2026-12-25'), 3000000);
-
-  const b = monthBudget({ settings: s, plans: [plan('a', 2000000, '2027-01-10')] }, today);
+  const state = { settings: s, plans: [plan('a', 2000000, '2027-01-10')], spends: [spend('비행기', 700000)] };
+  const b = monthBudget(state, today);
   const [now, next, after] = b.months;
   assert.equal(next.salary, 3300000);
   assert.equal(next.salaryEdited, true);
@@ -436,11 +442,11 @@ test('그 달만 실제 월급으로 고치면 그 달 계산에만 반영된다
   // 다음 달 준비 가능 금액이 1,000,000으로 늘어서 이번 달 몫까지 다음 달이 받는다
   assert.deepEqual(amounts(b.plans[0]), [0, 1000000, 700000]);
   assert.equal(b.plans[0].shortfall, 300000);
-  assert.equal(next.spend, 3300000 - 600000 - 500000 - 1000000);
+  assert.equal(next.left, 3300000 - 600000 - 500000 - 1200000 - 1000000);
   assert.equal(now.salary, 3000000);
 });
 
-test('이번 달 실제 월급은 이번 달 예상 여유 예산에 반영된다', () => {
+test('이번 달 실제 월급은 이번 달 남는 돈에 반영된다', () => {
   const today = '2026-10-26';
   const s = { ...settings, salaryOverrides: { '2026-10-25': 3500000 } };
   const b = monthBudget({ settings: s, plans: [] }, today);
@@ -449,7 +455,7 @@ test('이번 달 실제 월급은 이번 달 예상 여유 예산에 반영된�
   assert.equal(b.free, 3500000 - 600000 - 500000 - 1200000);
 });
 
-test('큰 지출 메모: "렌즈 30"처럼 만원 단위로 적어도 읽는다', () => {
+test('지출 메모: "렌즈 30"처럼 만원 단위로 적어도 읽는다', () => {
   const text = `렌즈 30
 수련회 35
 비행기 55만
@@ -472,7 +478,7 @@ test('큰 지출 메모: "렌즈 30"처럼 만원 단위로 적어도 읽는다'
   assert.equal(items.reduce((s, x) => s + x.amount, 0), 1625000);
 });
 
-test('큰 지출은 월급 주기별로 모은다', () => {
+test('지출은 월급 주기별로 모은다', () => {
   const spends = [
     { id: '1', date: '2026-10-24', name: '지난 달', amount: 100000 },
     { id: '2', date: '2026-10-25', name: '렌즈', amount: 300000 },
@@ -480,10 +486,11 @@ test('큰 지출은 월급 주기별로 모은다', () => {
   ];
   assert.deepEqual(spendsIn(spends, '2026-10-25', '2026-11-24').map((x) => x.id), ['2', '3']);
 });
+
 test('고정지출도 그 달만 고치면 그 달 계산에만 반영된다 (보너스 달 십일조)', () => {
   const today = '2026-10-26';
   const s = {
-    ...withBalance(0),
+    ...settings,
     fixedItems: [
       { id: 'rent', name: '월세', amount: 300000 },
       { id: 'tithe', name: '십일조', amount: 300000 },
@@ -502,12 +509,12 @@ test('고정지출도 그 달만 고치면 그 달 계산에만 반영된다 (�
       ['십일조', 350000, 300000, true],
     ],
   );
-  assert.equal(next.spend, 3500000 - 650000 - 500000);
+  assert.equal(next.left, 3500000 - 650000 - 500000 - 1200000);
   assert.equal(after.fixed, 600000);
-  assert.equal(after.spend, 3000000 - 600000 - 500000);
+  assert.equal(after.left, 3000000 - 600000 - 500000 - 1200000);
 });
 
-test('이번 달 고정지출을 고치면 이번 달 예상 여유 예산이 바뀐다', () => {
+test('이번 달 고정지출을 고치면 이번 달 남는 돈이 바뀐다', () => {
   const s = {
     ...settings,
     fixedItems: [{ id: 'tithe', name: '십일조', amount: 600000 }],
@@ -516,44 +523,4 @@ test('이번 달 고정지출을 고치면 이번 달 예상 여유 예산이 �
   const b = monthBudget({ settings: s, plans: [] }, '2026-10-26');
   assert.equal(b.fixed, 700000);
   assert.equal(b.free, 3000000 - 700000 - 500000 - 1200000);
-});
-
-test('이번 달 큰 지출: 기본은 이미 통장에서 나간 것(잔고에 반영)으로 보고 다시 빼지 않는다', () => {
-  // 잔고 105,000을 넣은 뒤에 이미 쓴 돈 2,150,000을 적어도 마이너스가 되지 않아야 한다
-  const today = '2026-10-28';
-  const s = withBalance(105000, { balanceUpdatedAt: '2026-10-26', balanceTs: '2026-10-26T12:00:00.000Z' });
-  const spends = [
-    { id: 'lens', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '렌즈', amount: 300000 },
-    { id: 'air', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '비행기', amount: 550000 },
-    { id: 'card', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '수련회', amount: 50000, pending: true },
-    { id: 'old', date: '2026-10-20', name: '지난 달', amount: 999999 }, // 지난 주기
-  ];
-  const none = monthBudget({ settings: s, plans: [] }, today);
-  const b = monthBudget({ settings: s, plans: [], spends }, today);
-  const m = b.months[0];
-  assert.deepEqual(m.spends.map((x) => [x.id, x.reflected]), [['lens', true], ['air', true], ['card', false]]);
-  assert.equal(m.spent, 50000); // '아직 안 나감'만 뺀다
-  assert.equal(b.spendable, 105000 - 50000);
-  assert.equal(b.spendable, none.spendable - 50000);
-  assert.equal(b.months[1].spend, none.months[1].spend); // 다음 달은 그대로
-});
-
-test('아직 안 나간 큰 지출은 이번 달 모을 수 있는 돈도 줄인다', () => {
-  const today = '2026-10-28';
-  const s = withBalance(500000, { balanceUpdatedAt: '2026-10-26', balanceTs: '2026-10-26T00:00:00.000Z' });
-  const spends = [{ id: 'x', date: '2026-10-27', ts: '2026-10-27T00:00:00.000Z', name: '수련회', amount: 350000, pending: true }];
-  const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')], spends }, today);
-  // 이번 달 준비 가능 500,000 - 350,000 = 150,000 → 이번 달 몫 150,000 그대로, 다음 달 150,000
-  assert.deepEqual(amounts(b.plans[0]), [150000, 150000]);
-  const tight = monthBudget({ settings: s, plans: [plan('a', 600000, '2026-12-10')], spends }, today);
-  assert.deepEqual(amounts(tight.plans[0]), [150000, 450000]); // 모자란 150,000은 다음 달로
-});
-
-test('잔고를 넣은 적 없으면 이번 달 큰 지출은 모두 이번 달 계산에서 뺀다', () => {
-  const today = '2026-10-28';
-  const spends = [{ id: 'x', date: '2026-10-27', name: '비행기', amount: 550000 }];
-  const none = monthBudget({ settings, plans: [] }, today);
-  const b = monthBudget({ settings, plans: [], spends }, today);
-  assert.equal(b.months[0].spent, 550000);
-  assert.equal(b.months[0].spend, none.months[0].spend - 550000);
 });

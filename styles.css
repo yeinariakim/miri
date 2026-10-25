@@ -2180,3 +2180,334 @@ select.input {
   height: 18px;
   accent-color: var(--accent);
 }
+
+/* ---------- 봉투 방식 홈 / 지출 / 월별 표 ---------- */
+
+:root {
+  --seg-spent: color-mix(in srgb, var(--accent) 45%, var(--ink));
+}
+
+.seg-spent {
+  background: var(--seg-spent);
+}
+
+.hero-tag {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.legend-mini {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.legend-mini li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-mini .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+
+.living-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
+  font-size: 14px;
+}
+
+.living-row b {
+  font-size: 17px;
+}
+
+.spend-card {
+  padding: 16px 16px 8px;
+  gap: 4px;
+}
+
+.spend-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spend-rows li + li {
+  border-top: 1px solid var(--line);
+}
+
+.spend-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 2px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 15px;
+}
+
+.sr-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spend-row b {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spend-row b.plus {
+  color: var(--accent);
+}
+
+.src {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  white-space: nowrap;
+  max-width: 8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.src-plan {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.src-other {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.src-income {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.next-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.next-label {
+  font-weight: 800;
+  font-size: 16px;
+  flex: none;
+}
+
+.next-vals {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.next-vals b {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.next-vals b.accent {
+  color: var(--accent);
+}
+
+.next-vals .ic,
+.month-table .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.next-card > .ic {
+  color: var(--ink-2);
+  width: 18px;
+  height: 18px;
+}
+
+.empty-link {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.sug-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sug-lines a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.sug-lines .ic {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-2);
+}
+
+.month-table {
+  padding: 8px 16px;
+  gap: 0;
+}
+
+.mt-head,
+.mrow summary {
+  display: grid;
+  grid-template-columns: 4.6em 1fr 1.25fr;
+  gap: 8px;
+  align-items: center;
+  text-align: right;
+}
+
+.mt-head {
+  padding: 8px 0 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.mrow {
+  border-top: 1px solid var(--line);
+}
+
+.mrow summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 0;
+  font-size: 15px;
+}
+
+.mrow summary::-webkit-details-marker {
+  display: none;
+}
+
+.mrow summary b {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.mr-label {
+  text-align: left;
+  font-weight: 800;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.mr-label small {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+.mrow[open] summary {
+  padding-bottom: 6px;
+}
+
+.mr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 14px;
+}
+
+.mr-body .bill-row {
+  font-size: 14px;
+  padding: 6px 0;
+}
+
+.mr-body .bill-total b {
+  font-size: 18px;
+}
+
+.mr-dues {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.mr-dues .ic {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+
+.mr-edit {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.mr-edit .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.spend-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 6px 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-btn .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.src-chips .chip {
+  flex: 1;
+  justify-content: center;
+}
