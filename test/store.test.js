@@ -101,7 +101,7 @@ test('그 달 월급과 큰 지출 메모도 백업·복원된다', () => {
   state.settings.fixedOverrides = { '2026-09-25': { tithe: 350000, bad: 'x' }, nope: { a: 1 } };
   state.spends = [
     { id: 's1', date: today, name: '렌즈', amount: 300000 },
-    { id: 's2', date: today, name: '비행기', amount: 550000, planId: 'p9' },
+    { id: 's2', date: today, name: '비행기', amount: 550000, planId: 'p9', pending: true },
     { id: 's3', date: 'nope', name: '이상함', amount: 1 },
   ];
   const restored = importJSON(exportJSON(state));
@@ -109,4 +109,6 @@ test('그 달 월급과 큰 지출 메모도 백업·복원된다', () => {
   assert.deepEqual(restored.settings.fixedOverrides, { '2026-09-25': { tithe: 350000 } });
   assert.deepEqual(restored.spends.map((x) => x.name), ['렌즈', '비행기']);
   assert.equal(restored.spends[1].planId, 'p9');
+  assert.equal(restored.spends[1].pending, true);
+  assert.equal('pending' in restored.spends[0], false);
 });

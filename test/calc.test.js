@@ -518,40 +518,34 @@ test('이번 달 고정지출을 고치면 이번 달 예상 여유 예산이 �
   assert.equal(b.free, 3000000 - 700000 - 500000 - 1200000);
 });
 
-test('이번 달 큰 지출: 잔고를 고친 뒤에 쓴 것만 쓸 수 있는 돈에서 뺀다', () => {
+test('이번 달 큰 지출: 기본은 이미 통장에서 나간 것(잔고에 반영)으로 보고 다시 빼지 않는다', () => {
+  // 잔고 105,000을 넣은 뒤에 이미 쓴 돈 2,150,000을 적어도 마이너스가 되지 않아야 한다
   const today = '2026-10-28';
-  const s = withBalance(900000, { balanceUpdatedAt: '2026-10-26', balanceTs: '2026-10-26T12:00:00.000Z' });
+  const s = withBalance(105000, { balanceUpdatedAt: '2026-10-26', balanceTs: '2026-10-26T12:00:00.000Z' });
   const spends = [
-    { id: 'before', date: '2026-10-26', ts: '2026-10-26T09:00:00.000Z', name: '렌즈', amount: 300000 }, // 잔고에 이미 반영
-    { id: 'after', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '비행기', amount: 550000 },
-    { id: 'old', date: '2026-10-20', ts: '2026-10-20T09:00:00.000Z', name: '지난 달', amount: 999999 }, // 지난 주기
+    { id: 'lens', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '렌즈', amount: 300000 },
+    { id: 'air', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '비행기', amount: 550000 },
+    { id: 'card', date: '2026-10-27', ts: '2026-10-27T09:00:00.000Z', name: '수련회', amount: 50000, pending: true },
+    { id: 'old', date: '2026-10-20', name: '지난 달', amount: 999999 }, // 지난 주기
   ];
   const none = monthBudget({ settings: s, plans: [] }, today);
   const b = monthBudget({ settings: s, plans: [], spends }, today);
   const m = b.months[0];
-  assert.deepEqual(m.spends.map((x) => [x.id, x.reflected]), [['before', true], ['after', false]]);
-  assert.equal(m.spent, 550000);
-  assert.equal(b.spendable, none.spendable - 550000);
+  assert.deepEqual(m.spends.map((x) => [x.id, x.reflected]), [['lens', true], ['air', true], ['card', false]]);
+  assert.equal(m.spent, 50000); // '아직 안 나감'만 뺀다
+  assert.equal(b.spendable, 105000 - 50000);
+  assert.equal(b.spendable, none.spendable - 50000);
   assert.equal(b.months[1].spend, none.months[1].spend); // 다음 달은 그대로
-
-  // 잔고를 다시 고치면 그 전 지출은 다 반영된 것으로 본다
-  const s2 = { ...s, balance: 350000, balanceUpdatedAt: '2026-10-28', balanceTs: '2026-10-28T00:00:00.000Z' };
-  const b2 = monthBudget({ settings: s2, plans: [], spends }, today);
-  assert.equal(b2.months[0].spent, 0);
-  assert.equal(b2.spendable, 350000);
 });
 
-test('이번 달 큰 지출은 이번 달 모을 수 있는 돈도 줄인다', () => {
+test('아직 안 나간 큰 지출은 이번 달 모을 수 있는 돈도 줄인다', () => {
   const today = '2026-10-28';
   const s = withBalance(500000, { balanceUpdatedAt: '2026-10-26', balanceTs: '2026-10-26T00:00:00.000Z' });
-  const spends = [{ id: 'x', date: '2026-10-27', ts: '2026-10-27T00:00:00.000Z', name: '수련회', amount: 350000 }];
+  const spends = [{ id: 'x', date: '2026-10-27', ts: '2026-10-27T00:00:00.000Z', name: '수련회', amount: 350000, pending: true }];
   const b = monthBudget({ settings: s, plans: [plan('a', 300000, '2026-12-10')], spends }, today);
   // 이번 달 준비 가능 500,000 - 350,000 = 150,000 → 이번 달 몫 150,000 그대로, 다음 달 150,000
   assert.deepEqual(amounts(b.plans[0]), [150000, 150000]);
-  const tight = monthBudget(
-    { settings: s, plans: [plan('a', 600000, '2026-12-10')], spends },
-    today,
-  );
+  const tight = monthBudget({ settings: s, plans: [plan('a', 600000, '2026-12-10')], spends }, today);
   assert.deepEqual(amounts(tight.plans[0]), [150000, 450000]); // 모자란 150,000은 다음 달로
 });
 
@@ -562,15 +556,4 @@ test('잔고를 넣은 적 없으면 이번 달 큰 지출은 모두 이번 달 
   const b = monthBudget({ settings, plans: [], spends }, today);
   assert.equal(b.months[0].spent, 550000);
   assert.equal(b.months[0].spend, none.months[0].spend - 550000);
-});
-
-test('잔고 고친 시각이 없는 예전 데이터: 같은 날 새로 넣은 지출은 잔고 고친 뒤로 본다', () => {
-  const s = withBalance(500000, { balanceUpdatedAt: '2026-10-26' }); // balanceTs 없음
-  const spends = [
-    { id: 'memo', date: '2026-10-26', name: '예전 메모', amount: 100000 }, // ts 없음 → 반영됨
-    { id: 'new', date: '2026-10-26', ts: '2026-10-26T10:00:00.000Z', name: '새 항목', amount: 200000 },
-  ];
-  const m = monthBudget({ settings: s, plans: [], spends }, '2026-10-26').months[0];
-  assert.deepEqual(m.spends.map((x) => [x.id, x.reflected]), [['memo', true], ['new', false]]);
-  assert.equal(m.spent, 200000);
 });

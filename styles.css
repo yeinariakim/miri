@@ -2143,3 +2143,40 @@ select.input {
 .bill-subs li.bill-sub {
   cursor: default;
 }
+
+.tag-btn {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+.tag-btn.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.bill-note {
+  padding: 4px 0 8px 1.6em;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.check-line input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}

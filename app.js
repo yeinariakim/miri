@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.25-5';
+const VERSION = '2026.10.25-6';
 
 const today = () => C.todayStr();
 
@@ -199,7 +199,7 @@ function viewHome() {
              <button class="btn btn-primary btn-sm" data-action="open-settings" data-focus="balance">지금 잔고 입력하기</button>`
           : `<p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(spendText)}">${spendText}</p>
              ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · 다음 월급날까지 ${won(-b.spendable)}이 모자라요</span></p>` : ''}
-             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} ${b.months[0].spent ? ` − 큰 지출 ${won(b.months[0].spent)}` : ''} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
+             <p class="hero-calc num">잔고 ${won(b.balance)} − 나갈 돈 ${won(b.pendingOut)} ${b.months[0].spent ? ` − 아직 안 나간 큰 지출 ${won(b.months[0].spent)}` : ''} − 이번 달 모을 돈 ${won(b.months[0].reserve)}${b.months[0].shortfall ? ` − 월급 전 부족 ${won(b.months[0].shortfall)}` : ''}</p>
              ${
                b.balanceAge >= 2
                  ? `<button class="stale-btn" data-action="open-settings" data-focus="balance">${icon('clock')}<span>${b.balanceAge}일 전 잔고 기준 · <b>업데이트</b></span></button>`
@@ -498,6 +498,7 @@ function viewCalendar() {
       if (!name) return toast('어디에 쓴 돈인지 적어 주세요.');
       if (!amount) return toast('금액을 적어 주세요.');
       const x = { id: S.newId(), date: today(), ts: new Date().toISOString(), name: name.slice(0, 30), amount };
+      if (form.spendPending?.checked) x.pending = true;
       commit({ ...state, spends: [...(state.spends || []), x] });
       toast(`${name} ${won(amount)} 넣었어요`);
       document.getElementById('spend-name')?.focus({ preventScroll: true });
@@ -587,21 +588,26 @@ function monthCard(m, b) {
 }
 
 // 이번 달 큰 지출 줄: 잔고에 아직 안 들어간 것만 뺀다
+// 이번 달 큰 지출 줄. 잔고를 넣었으면 '아직 안 나감'만 빼고, 나머지는 잔고에 반영됐다고 적어만 둔다.
 function spentRows(m, balanceMonth) {
-  const counted = m.spends.filter((x) => !x.reflected);
   if (!m.spends.length) return '';
-  const label = `<span class="bill-sign" aria-hidden="true">−</span><span>이번 달 큰 지출${
-    balanceMonth ? '<small>잔고를 고친 뒤에 쓴 것만 빼요</small>' : ''
-  }</span>`;
-  return `
-    <li class="bill-row"><span class="bill-label">${label}</span><b class="num">${won(m.spent)}</b></li>
-    ${
-      counted.length
-        ? `<li><ul class="bill-subs">${counted
-            .map((x) => `<li class="bill-sub"><span>${esc(x.name)}</span><span class="num">${won(x.amount)}</span></li>`)
-            .join('')}</ul></li>`
-        : ''
-    }`;
+  const counted = m.spends.filter((x) => !x.reflected);
+  const reflected = m.spends.filter((x) => x.reflected).reduce((sum, x) => sum + x.amount, 0);
+  const subs = counted.length
+    ? `<li><ul class="bill-subs">${counted
+        .map((x) => `<li class="bill-sub"><span>${esc(x.name)}</span><span class="num">${won(x.amount)}</span></li>`)
+        .join('')}</ul></li>`
+    : '';
+  const main = counted.length
+    ? `<li class="bill-row"><span class="bill-label"><span class="bill-sign" aria-hidden="true">−</span><span>${
+        balanceMonth ? '아직 안 나간 큰 지출' : '이번 달 큰 지출'
+      }</span></span><b class="num">${won(m.spent)}</b></li>${subs}`
+    : '';
+  const note =
+    balanceMonth && reflected
+      ? `<li class="bill-note">이번 달 큰 지출 ${won(reflected)}은 이미 통장에서 나가서 잔고에 반영돼 있어요 (다시 빼지 않아요)</li>`
+      : '';
+  return main + note;
 }
 
 function monthEditSummary(m, balanceMonth) {
@@ -615,7 +621,13 @@ const spendItem = (x) => {
   const plan = x.planId && state.plans.find((p) => p.id === x.planId);
   return `<li class="spend-item">
     <span class="spend-name">${esc(x.name)}${
-      x.reflected ? '<small>잔고에 반영됨</small>' : x.reflected === false ? '<small class="counted">이번 달 계산에서 뺌</small>' : ''
+      x.reflected === undefined
+        ? ''
+        : !C.hasBalance(state.settings)
+          ? '<small class="counted">이번 달 계산에서 뺌</small>'
+          : `<button type="button" class="tag-btn ${x.pending ? 'on' : ''}" data-action="spend-toggle" data-id="${esc(x.id)}" aria-pressed="${x.pending ? 'true' : 'false'}">${
+              x.pending ? '아직 안 나감' : '통장에서 나감'
+            }</button>`
     }</span>
     <b class="num">${won(x.amount)}</b>
     ${
@@ -636,7 +648,7 @@ function spendMemo(m) {
       <p class="mc-list-title">이번 달 큰 지출 ${list.length ? `<span class="num">· ${list.length}개 · 합계 ${won(total)}</span>` : ''}</p>
       <p class="field-hint">${
         balanceSet
-          ? '잔고를 고친 뒤에 쓴 돈은 이번 달 쓸 수 있는 돈에서 빼요. 잔고를 다시 고치면 그 전 지출은 잔고에 반영된 것으로 봐요.'
+          ? "이미 통장에서 나간 돈은 잔고에 들어 있으니 다시 빼지 않아요. 카드값처럼 아직 안 나간 것만 '아직 안 나감'으로 바꾸면 이번 달 쓸 수 있는 돈에서 빼요. 나가고 나면 다시 눌러 '통장에서 나감'으로 바꾸고 잔고를 고쳐 주세요."
           : '이번 달 쓸 수 있는 돈에서 빼요.'
       } 내년에도 있을 지출은 '내년에도'를 누르면 1년 뒤 같은 날짜로 계획이 만들어져요.</p>
       ${list.length ? `<ul class="spend-list">${list.map(spendItem).join('')}</ul>` : ''}
@@ -645,6 +657,11 @@ function spendMemo(m) {
           <input class="input" id="spend-name" name="spendName" maxlength="30" placeholder="어디에 (예: 렌즈)" aria-label="지출 이름">
           ${moneyField('spend-amount', 0)}
         </div>
+        ${
+          balanceSet
+            ? `<label class="check-line"><input type="checkbox" name="spendPending"><span>아직 통장에서 안 나갔어요 (카드값 등)</span></label>`
+            : ''
+        }
         <div class="spend-add-row2">
           <span class="quick" role="group" aria-label="빠르게 더하기">
             <button type="button" class="chip-btn" data-spend-add="10000">+1만</button>
@@ -1483,7 +1500,16 @@ document.addEventListener('click', (e) => {
   }
   else if (a === 'close-sheet') closeSheet();
   else if (a === 'edit-salary') openSheet('salary', el.dataset.start);
-  else if (a === 'spend-del') {
+  else if (a === 'spend-toggle') {
+    commit({
+      ...state,
+      spends: state.spends.map((x) => {
+        if (x.id !== el.dataset.id) return x;
+        const { pending, ...rest } = x;
+        return pending ? rest : { ...rest, pending: true };
+      }),
+    });
+  } else if (a === 'spend-del') {
     commit({ ...state, spends: state.spends.filter((x) => x.id !== el.dataset.id) });
     toast('메모를 지웠어요');
   } else if (a === 'spend-repeat') {

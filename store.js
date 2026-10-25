@@ -115,6 +115,7 @@ function normalizeState(data) {
       name: x.name.trim().slice(0, 30) || '이름 없음',
       amount: int(x.amount),
       ...(typeof x.ts === 'string' ? { ts: x.ts } : {}),
+      ...(x.pending === true ? { pending: true } : {}),
       ...(typeof x.planId === 'string' ? { planId: x.planId } : {}),
     }));
   return { version: 1, settings, plans, spends };

@@ -241,14 +241,13 @@ export function monthlyCapacity(settings, start) {
 
 export const hasBalance = (settings) => typeof settings.balance === 'number' && !!settings.balanceUpdatedAt;
 
-// 이번 달에 쓴 큰 돈이 이미 잔고에 들어 있는지: 잔고를 고친 뒤에 적은 것만 아직 안 들어 있다고 본다.
+// 이번 달에 쓴 큰 돈이 이미 잔고에 들어 있는지.
+// 보통은 쓰고 나서 적으니 이미 통장에서 나간 것(잔고에 반영)으로 본다.
+// '아직 안 나감'으로 표시한 것(pending)만 잔고에 아직 안 들어 있다고 보고 뺀다.
+// 잔고를 넣은 적이 없으면 이번 달 것은 모두 월급에서 빼야 하므로 반영 안 된 것으로 본다.
 export function isReflected(spend, settings) {
   if (!hasBalance(settings)) return false;
-  if (spend.ts && settings.balanceTs) return spend.ts <= settings.balanceTs;
-  // 잔고 고친 시각이 없으면(예전 버전에서 고침) 날짜로 본다. 시각이 있는 지출은 그 뒤 버전에서 적은 것이라
-  // 같은 날이면 잔고를 고친 뒤로 본다.
-  if (spend.ts) return spend.date < settings.balanceUpdatedAt;
-  return spend.date <= settings.balanceUpdatedAt;
+  return !spend.pending;
 }
 
 // 이번 달(현재 월급 주기)에 쓴 큰 돈. 잔고에 아직 안 들어간 것만 계산에서 뺀다.
@@ -260,7 +259,7 @@ export function spentThisPeriod(state, today) {
 }
 
 // 이번 달(현재 월급 주기)에 준비할 수 있는 돈
-//   = max(잔고 - 다음 월급 전까지 나갈 돈 - 잔고 고친 뒤 쓴 큰 돈, 0)
+//   = max(잔고 - 다음 월급 전까지 나갈 돈 - 아직 안 나간 큰 지출, 0)
 // 잔고를 아직 안 넣었으면 매달 준비 가능 금액에서 이번 달 쓴 큰 돈을 뺀 값으로 대신한다.
 export function availableNow(settings, start, spent = 0) {
   if (!hasBalance(settings)) return Math.max(0, monthlyCapacity(settings, start) - spent);
@@ -378,7 +377,7 @@ export function monthBudget(state, today) {
 
 // 월별 전망: 월급 주기마다 모을 돈과 쓸 수 있는 돈.
 // 쓸 수 있는 돈은 생활비를 포함한 금액이다.
-//   이번 달 = 잔고 - 아직 나갈 돈 - 잔고 고친 뒤 쓴 큰 돈 - 이번 달에 모을 돈 - 이번 달이 기한인데 못 채운 금액
+//   이번 달 = 잔고 - 아직 나갈 돈 - 아직 안 나간 큰 지출 - 이번 달에 모을 돈 - 이번 달이 기한인데 못 채운 금액
 //   다음 달부터 = 월급 - 고정지출 - 적금 - 그 달에 모을 돈 - 그 달이 기한인데 못 채운 금액
 // 잔고를 넣은 적이 없으면 이번 달도 월급 기준으로 계산한다.
 export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(settings), spent = { list: [], counted: 0 }) {
@@ -515,7 +514,7 @@ export function suggestAdjustments(state, today, delays = [1, 2, 3]) {
 }
 
 // ---------- 큰 지출 ----------
-// 이번 달에 나간 큰 돈. 잔고를 고친 뒤에 적은 것만 이번 달 계산에서 뺀다 (spentThisPeriod).
+// 이번 달 큰 지출. 잔고를 넣었으면 '아직 안 나감'인 것만 이번 달 계산에서 뺀다 (spentThisPeriod).
 
 // "렌즈 30", "비행기 55만", "축의 200,000원" 같은 줄(쉼표·줄바꿈으로 여러 개)을 읽는다.
 // 단위 없이 1만 미만 숫자면 만원 단위로 본다.
