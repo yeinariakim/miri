@@ -483,3 +483,41 @@ test('큰 지출 메모는 월급 주기별로 모으고, 계산에는 넣지 �
   const after = monthBudget({ settings: withBalance(500000), plans: [], spends }, '2026-10-26');
   assert.equal(after.spendable, before.spendable);
 });
+
+test('고정지출도 그 달만 고치면 그 달 계산에만 반영된다 (보너스 달 십일조)', () => {
+  const today = '2026-10-26';
+  const s = {
+    ...withBalance(0),
+    fixedItems: [
+      { id: 'rent', name: '월세', amount: 300000 },
+      { id: 'tithe', name: '십일조', amount: 300000 },
+    ],
+    salaryOverrides: { '2026-11-25': 3500000 },
+    fixedOverrides: { '2026-11-25': { tithe: 350000, gone: 99999 } }, // 지운 항목 id는 무시
+  };
+  const b = monthBudget({ settings: s, plans: [] }, today);
+  const [now, next, after] = b.months;
+  assert.equal(now.fixed, 600000);
+  assert.equal(next.fixed, 650000);
+  assert.deepEqual(
+    next.fixedItems.map((it) => [it.name, it.amount, it.base, it.edited]),
+    [
+      ['월세', 300000, 300000, false],
+      ['십일조', 350000, 300000, true],
+    ],
+  );
+  assert.equal(next.spend, 3500000 - 650000 - 500000);
+  assert.equal(after.fixed, 600000);
+  assert.equal(after.spend, 3000000 - 600000 - 500000);
+});
+
+test('이번 달 고정지출을 고치면 이번 달 예상 여유 예산이 바뀐다', () => {
+  const s = {
+    ...settings,
+    fixedItems: [{ id: 'tithe', name: '십일조', amount: 600000 }],
+    fixedOverrides: { '2026-10-25': { tithe: 700000 } },
+  };
+  const b = monthBudget({ settings: s, plans: [] }, '2026-10-26');
+  assert.equal(b.fixed, 700000);
+  assert.equal(b.free, 3000000 - 700000 - 500000 - 1200000);
+});

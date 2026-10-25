@@ -40,6 +40,7 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
     balance: null,
     balanceUpdatedAt: null,
     pendingOut: 0,
+    fixedOverrides: {},
     salaryOverrides: {},
   });
   assert.equal(s.plans.length, 1);
@@ -96,6 +97,7 @@ test('고정지출 항목: 합계로 계산되고, 예전 합계 하나짜리 �
 test('그 달 월급과 큰 지출 메모도 백업·복원된다', () => {
   const state = createSampleState(today);
   state.settings.salaryOverrides = { '2026-09-25': 3450000, 'bad-key': 1 };
+  state.settings.fixedOverrides = { '2026-09-25': { tithe: 350000, bad: 'x' }, nope: { a: 1 } };
   state.spends = [
     { id: 's1', date: today, name: '렌즈', amount: 300000 },
     { id: 's2', date: today, name: '비행기', amount: 550000, planId: 'p9' },
@@ -103,6 +105,7 @@ test('그 달 월급과 큰 지출 메모도 백업·복원된다', () => {
   ];
   const restored = importJSON(exportJSON(state));
   assert.deepEqual(restored.settings.salaryOverrides, { '2026-09-25': 3450000 });
+  assert.deepEqual(restored.settings.fixedOverrides, { '2026-09-25': { tithe: 350000 } });
   assert.deepEqual(restored.spends.map((x) => x.name), ['렌즈', '비행기']);
   assert.equal(restored.spends[1].planId, 'p9');
 });

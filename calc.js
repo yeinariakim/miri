@@ -220,9 +220,23 @@ export function salaryFor(settings, start) {
   return typeof v === 'number' ? v : settings.salary;
 }
 
+// 그 달 고정지출 항목. 기본 금액을 쓰고, 그 달만 고친 항목(보너스 달 십일조 등)은 그 값을 쓴다.
+export function fixedItemsFor(settings, start) {
+  const o = settings.fixedOverrides?.[start] || {};
+  return (settings.fixedItems || []).map((it) => {
+    const edited = typeof o[it.id] === 'number';
+    return { ...it, base: it.amount, amount: edited ? o[it.id] : it.amount, edited };
+  });
+}
+
+export function fixedFor(settings, start) {
+  if (!Array.isArray(settings.fixedItems)) return fixedTotal(settings);
+  return fixedItemsFor(settings, start).reduce((sum, it) => sum + (it.amount || 0), 0);
+}
+
 // 매달 준비 가능 금액 = 월급 - 고정지출 - 적금 - 생활비
 export function monthlyCapacity(settings, start) {
-  return Math.max(0, salaryFor(settings, start) - fixedTotal(settings) - settings.savings - settings.living);
+  return Math.max(0, salaryFor(settings, start) - fixedFor(settings, start) - settings.savings - settings.living);
 }
 
 export const hasBalance = (settings) => typeof settings.balance === 'number' && !!settings.balanceUpdatedAt;
@@ -310,7 +324,7 @@ export function monthBudget(state, today) {
     return info;
   });
 
-  const fixed = fixedTotal(s);
+  const fixed = fixedFor(s, period.start);
   const reserve = plans.reduce((sum, p) => sum + p.thisMonth, 0);
   const reserveLeft = plans.reduce((sum, p) => sum + p.thisMonthLeft, 0);
   const shortfall = plans.reduce((sum, p) => sum + p.shortfall, 0);
@@ -355,9 +369,11 @@ export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(
     const t = shiftMonth(y, m, 1);
     all.push(paydayIn(t.y, t.m, settings.payday));
   }
-  const costs = fixedTotal(settings) + settings.savings;
   return Array.from({ length: n }, (_, k) => {
     const salary = salaryFor(settings, all[k]);
+    const fixedItems = fixedItemsFor(settings, all[k]);
+    const fixed = fixedFor(settings, all[k]);
+    const costs = fixed + settings.savings;
     const allocs = plans
       .filter((p) => (p.schedule[k]?.amount || 0) > 0)
       .map((p) => ({ id: p.id, name: p.name, amount: p.schedule[k].amount }));
@@ -375,6 +391,8 @@ export function monthlyOutlook(settings, plans, starts, balanceSet = hasBalance(
       label: periodLabel(all[k]),
       salary,
       salaryEdited: salary !== settings.salary || typeof settings.salaryOverrides?.[all[k]] === 'number',
+      fixed,
+      fixedItems,
       reserve,
       spend,
       // 생활비 예산 말고 더 남는 돈 (월급 기준인 달만)

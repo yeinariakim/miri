@@ -60,6 +60,20 @@ function normalizeState(data) {
     balance: s.balance == null || s.balance === '' ? null : int(s.balance),
     balanceUpdatedAt: isValidDate(s.balanceUpdatedAt) ? s.balanceUpdatedAt : null,
     pendingOut: int(s.pendingOut),
+    // 그 달만 고친 고정지출 { 월급 주기 시작일: { 항목 id: 금액 } }
+    fixedOverrides: Object.fromEntries(
+      Object.entries(s.fixedOverrides && typeof s.fixedOverrides === 'object' ? s.fixedOverrides : {})
+        .filter(([k, v]) => isValidDate(k) && v && typeof v === 'object')
+        .map(([k, v]) => [
+          k,
+          Object.fromEntries(
+            Object.entries(v)
+              .filter(([, x]) => Number.isFinite(Number(x)))
+              .map(([id, x]) => [String(id), int(x)]),
+          ),
+        ])
+        .filter(([, v]) => Object.keys(v).length),
+    ),
     // 실제로 받은 월급을 그 달만 적어 둔 것 { 월급 주기 시작일: 금액 }
     salaryOverrides: Object.fromEntries(
       Object.entries(s.salaryOverrides && typeof s.salaryOverrides === 'object' ? s.salaryOverrides : {})
@@ -140,6 +154,7 @@ export function createSampleState(today) {
     balanceUpdatedAt: today,
     pendingOut: 250000,
     salaryOverrides: {},
+    fixedOverrides: {},
   };
   const { y } = parseDate(today);
   const yearEnd = `${y}-12-20` > addDays(today, 14) ? `${y}-12-20` : `${y + 1}-12-20`;

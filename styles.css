@@ -2049,3 +2049,41 @@ select.input {
 .past + .past {
   border-top: 1px solid var(--line);
 }
+
+/* ---------- 이 달 금액 고치기 ---------- */
+
+.month-fixed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.month-fixed-row .money-input {
+  min-height: 46px;
+  padding: 0 12px;
+}
+
+.month-fixed-row .money-input input {
+  font-size: 16px;
+  padding: 8px 0;
+}
+
+.mf-name {
+  display: flex;
+  flex-direction: column;
+  font-size: 15px;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.mf-name small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.bill-label .edited {
+  color: var(--ink);
+  font-weight: 700;
+}
