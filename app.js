@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.25-2';
+const VERSION = '2026.10.25-3';
 
 const today = () => C.todayStr();
 
@@ -477,10 +477,25 @@ function viewCalendar() {
       </div>
     </header>
     ${b.months.map((m) => monthCard(m, b)).join('')}
+    ${pastSpends(b)}
     <p class="hero-note">${icon('info')}<span>계좌 잔액이 아닌 <b>예상</b>이에요. ${
       b.spendable === null ? '' : '이번 달은 입력한 잔고, '
     }다음 달부터는 월급 − 고정지출 − 적금 기준이에요. 계획이나 설정을 바꾸면 바로 다시 계산돼요.</span></p>
   `;
+
+  const form = document.getElementById('spend-form');
+  form?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const { items, errors } = C.parseSpendLines(form.spend.value);
+    if (!items.length) {
+      toast(errors.length ? `'${errors[0]}'을 못 읽었어요. "렌즈 30"처럼 이름과 금액을 적어 주세요.` : '이름과 금액을 적어 주세요.');
+      return;
+    }
+    const t = today();
+    const added = items.map((x) => ({ id: S.newId(), date: t, ...x }));
+    commit({ ...state, spends: [...(state.spends || []), ...added] });
+    toast(errors.length ? `${added.length}개 적었어요. 못 읽은 줄: ${errors.join(', ')}` : `${added.length}개 적었어요`);
+  });
 }
 
 // 달마다 "월급에서 무엇을 빼서 얼마가 남는지"를 영수증처럼 보여 준다
@@ -511,7 +526,7 @@ function monthCard(m, b) {
           balanceMonth
             ? `${row('지금 통장 잔고', b.balance, { sign: '', cls: 'bill-start' })}
                ${row('아직 나갈 돈', b.pendingOut, { sub: '카드값, 아직 안 빠진 고정지출·적금' })}`
-            : `${row('월급', b.salary, { sign: '', cls: 'bill-start' })}
+            : `${row('월급', m.salary, { sign: '', cls: 'bill-start', sub: m.salaryEdited ? `이 달 실제 금액 · 기본 ${won(b.salaryBase)}` : '기본 월급' })}
                ${row(`고정지출${items.length ? ` · ${items.length}개` : ''}`, b.fixed, {
                  sub: items.map((it) => esc(it.name)).join(' · '),
                })}
@@ -525,6 +540,12 @@ function monthCard(m, b) {
           ${spendCell(m.spend)}
         </li>
       </ul>
+      <div class="salary-line">
+        <span class="small muted num">${
+          balanceMonth ? `이 달 월급 ${won(m.salary)}${m.salaryEdited ? ' (실제)' : ' (기본)'} · 잔고에 이미 들어 있어요` : m.salaryEdited ? '실제 받은 월급으로 계산했어요' : '기본 월급으로 계산했어요'
+        }</span>
+        <button type="button" class="chip-btn" data-action="edit-salary" data-start="${m.start}">${icon('pencil')}이 달 월급 고치기</button>
+      </div>
       <p class="pv-note num">${
         balanceMonth
           ? '다음 월급날까지 생활비까지 포함해서 쓸 수 있는 돈이에요. 고정지출·적금은 이미 빠졌으면 잔고에 반영돼 있고, 아직이면 \'아직 나갈 돈\'에 넣어야 빠져요.'
@@ -552,8 +573,64 @@ function monthCard(m, b) {
              </div>`
           : ''
       }
+      ${m.k === 0 ? spendMemo(m) : ''}
     </section>`;
 }
+
+const spendItem = (x) => {
+  const plan = x.planId && state.plans.find((p) => p.id === x.planId);
+  return `<li class="spend-item">
+    <span class="spend-name">${esc(x.name)}</span>
+    <b class="num">${won(x.amount)}</b>
+    ${
+      plan
+        ? `<button type="button" class="chip-btn ghost" data-action="open-plan" data-id="${esc(plan.id)}">${icon('check')}내년 계획</button>`
+        : `<button type="button" class="chip-btn" data-action="spend-repeat" data-id="${esc(x.id)}">내년에도</button>`
+    }
+    <button type="button" class="icon-btn fixed-del" data-action="spend-del" data-id="${esc(x.id)}" aria-label="${esc(x.name)} 지우기">${icon('x')}</button>
+  </li>`;
+};
+
+function spendMemo(m) {
+  const list = C.spendsIn(state.spends, m.start, m.end);
+  const total = list.reduce((sum, x) => sum + x.amount, 0);
+  return `
+    <div class="memo-box">
+      <p class="mc-list-title">이번 달 쓴 큰 돈 ${list.length ? `<span class="num">· 합계 ${won(total)}</span>` : ''}</p>
+      <p class="field-hint">대충 적어 두는 메모예요. 잔고에 이미 반영된 돈이라 계산에는 넣지 않아요. 내년에도 있을 지출은 '내년에도'를 누르면 1년 뒤 같은 날짜로 계획이 만들어져요.</p>
+      ${list.length ? `<ul class="spend-list">${list.map(spendItem).join('')}</ul>` : ''}
+      <form class="spend-form" id="spend-form" autocomplete="off">
+        <textarea class="input textarea" name="spend" rows="2" placeholder="렌즈 30&#10;비행기 55  (만원 단위로 적어도 돼요)" aria-label="쓴 돈 적기"></textarea>
+        <button type="submit" class="btn btn-ghost">${icon('plus')}추가</button>
+      </form>
+    </div>`;
+}
+
+function pastSpends(b) {
+  const start = b.period.start;
+  const groups = new Map();
+  for (const x of (state.spends || []).filter((x) => x.date < start)) {
+    const p = C.currentPeriod(x.date, state.settings.payday).start;
+    if (!groups.has(p)) groups.set(p, []);
+    groups.get(p).push(x);
+  }
+  if (!groups.size) return '';
+  return `
+    <section class="card">
+      <h2 class="sub-title">지난 달 쓴 큰 돈</h2>
+      ${[...groups.entries()]
+        .sort((a, c) => (a[0] < c[0] ? 1 : -1))
+        .map(
+          ([p, list]) => `<details class="past">
+            <summary><span>${C.parseDate(addDaysLabel(p)).y}년 ${C.periodLabel(p)}</span><b class="num">${won(list.reduce((sum, x) => sum + x.amount, 0))}</b></summary>
+            <ul class="spend-list">${list.map(spendItem).join('')}</ul>
+          </details>`,
+        )
+        .join('')}
+    </section>`;
+}
+
+const addDaysLabel = (start) => C.addDays(start, 15);
 
 // ---------- 새 계획 추가 / 수정 ----------
 
@@ -851,11 +928,66 @@ function fillSheet() {
   if (sheet.type === 'plan') {
     body.innerHTML = planSheetHTML(sheet.id);
     bindPlanSheet(body, sheet.id);
+  } else if (sheet.type === 'salary') {
+    body.innerHTML = salarySheetHTML(sheet.id);
+    bindSalarySheet(body, sheet.id);
   } else {
     body.innerHTML = settingsSheetHTML();
     bindSettingsSheet(body);
   }
   sheetEl.scrollTop = scroll;
+}
+
+// --- 그 달 월급 ---
+
+function salarySheetHTML(start) {
+  const s = state.settings;
+  const m = C.monthBudget(state, today()).months.find((x) => x.start === start);
+  const edited = typeof s.salaryOverrides?.[start] === 'number';
+  return `
+    <div class="sheet-head">
+      <div class="sheet-title-wrap">
+        <h2 id="sheet-title" class="sheet-title">${C.periodLabel(start)} 월급</h2>
+        <span class="muted small num">${m ? `${shortDate(m.start)} – ${shortDate(m.end)}` : ''} · 기본 ${won(s.salary)}</span>
+      </div>
+      <button class="icon-btn" data-action="close-sheet" aria-label="닫기">${icon('x')}</button>
+    </div>
+    <form id="salary-form" class="form" novalidate>
+      <div class="field">
+        <label class="field-label" for="month-salary">실제로 받은 금액</label>
+        ${moneyField('month-salary', C.salaryFor(s, start))}
+        <span class="field-hint">야근수당·보너스까지 포함해 통장에 들어온 금액. 이 달 계산에만 쓰이고, 다른 달은 기본 월급 그대로예요.</span>
+      </div>
+      <div class="rec-actions">
+        ${edited ? `<button type="button" class="btn btn-ghost" data-salary-reset>기본으로 되돌리기</button>` : '<span></span>'}
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>`;
+}
+
+function bindSalarySheet(body, start) {
+  const form = body.querySelector('#salary-form');
+  const input = form.querySelector('#month-salary');
+  let value = C.salaryFor(state.settings, start);
+  bindMoney(input, (v) => (value = v));
+  const save = (v) => {
+    const overrides = { ...(state.settings.salaryOverrides || {}) };
+    if (v === null || v === state.settings.salary) delete overrides[start];
+    else overrides[start] = v;
+    commit({ ...state, settings: { ...state.settings, salaryOverrides: overrides } });
+    closeSheet();
+  };
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    save(value);
+    toast(`${C.periodLabel(start)} 월급을 ${won(value)}으로 고쳤어요`);
+  });
+  body.querySelector('[data-salary-reset]')?.addEventListener('click', () => {
+    save(null);
+    toast('기본 월급으로 되돌렸어요');
+  });
+  input.focus({ preventScroll: true });
+  input.select();
 }
 
 // --- 계획 상세 ---
@@ -1058,8 +1190,9 @@ function settingsSheetHTML() {
         </div>
       </div>
       <div class="field">
-        <label class="field-label" for="salary">월 실수령액</label>
+        <label class="field-label" for="salary">기본 월급 (실수령)</label>
         ${moneyField('salary', s.salary)}
+        <span class="field-hint">야근수당·보너스를 뺀 대략적인 금액. 실제로 받은 금액이 다르면 월별 탭에서 그 달만 고쳐요.</span>
       </div>
       <label class="field">
         <span class="field-label">급여일</span>
@@ -1254,6 +1387,37 @@ document.addEventListener('click', (e) => {
     if (el.dataset.focus) $sheetRoot.querySelector(`#${el.dataset.focus}`)?.focus({ preventScroll: true });
   }
   else if (a === 'close-sheet') closeSheet();
+  else if (a === 'edit-salary') openSheet('salary', el.dataset.start);
+  else if (a === 'spend-del') {
+    commit({ ...state, spends: state.spends.filter((x) => x.id !== el.dataset.id) });
+    toast('메모를 지웠어요');
+  } else if (a === 'spend-repeat') {
+    const x = state.spends.find((y) => y.id === el.dataset.id);
+    if (!x) return;
+    const t = today();
+    let dueDate = C.addMonths(x.date, 12);
+    if (dueDate < t) dueDate = C.addMonths(t, 12);
+    const plan = {
+      id: S.newId(),
+      name: x.name,
+      category: '기타',
+      amount: x.amount,
+      dueDate,
+      importance: 'flex',
+      stage: 'active',
+      notes: `${x.date} 큰 지출 메모에서 만듦`,
+      createdAt: new Date().toISOString(),
+      baselineMonthly: 0,
+      history: [],
+    };
+    plan.baselineMonthly = C.planMonth(plan, state.settings, t).monthlyNeed;
+    commit({
+      ...state,
+      plans: [...state.plans, plan],
+      spends: state.spends.map((y) => (y.id === x.id ? { ...y, planId: plan.id } : y)),
+    });
+    toast(`${dateLabel(dueDate, { year: true })} '${x.name}' 계획을 만들었어요`);
+  }
   else if (a === 'back' && cameFromApp) {
     e.preventDefault();
     history.back();

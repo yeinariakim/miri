@@ -1944,3 +1944,108 @@ select.input {
   width: 16px;
   height: 16px;
 }
+
+/* ---------- 그 달 월급 / 큰 지출 메모 ---------- */
+
+.salary-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.salary-line .chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  min-height: 32px;
+}
+
+.salary-line .ic {
+  width: 15px;
+  height: 15px;
+}
+
+.memo-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.spend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spend-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.spend-item:last-child {
+  border-bottom: 0;
+}
+
+.spend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spend-item .chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.spend-item .chip-btn .ic {
+  width: 13px;
+  height: 13px;
+}
+
+.spend-item .fixed-del {
+  width: 36px;
+  height: 36px;
+}
+
+.spend-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.spend-form .textarea {
+  min-height: 56px;
+  font-size: 15px;
+}
+
+.past summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 15px;
+  list-style: none;
+}
+
+.past summary::-webkit-details-marker {
+  display: none;
+}
+
+.past + .past {
+  border-top: 1px solid var(--line);
+}

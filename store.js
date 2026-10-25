@@ -60,6 +60,12 @@ function normalizeState(data) {
     balance: s.balance == null || s.balance === '' ? null : int(s.balance),
     balanceUpdatedAt: isValidDate(s.balanceUpdatedAt) ? s.balanceUpdatedAt : null,
     pendingOut: int(s.pendingOut),
+    // 실제로 받은 월급을 그 달만 적어 둔 것 { 월급 주기 시작일: 금액 }
+    salaryOverrides: Object.fromEntries(
+      Object.entries(s.salaryOverrides && typeof s.salaryOverrides === 'object' ? s.salaryOverrides : {})
+        .filter(([k, v]) => isValidDate(k) && Number.isFinite(Number(v)))
+        .map(([k, v]) => [k, int(v)]),
+    ),
   };
   if (settings.balance === null) settings.balanceUpdatedAt = null;
   const plans = data.plans
@@ -86,7 +92,16 @@ function normalizeState(data) {
           kind: h.kind === 'initial' ? 'initial' : 'manual',
         })),
     }));
-  return { version: 1, settings, plans };
+  const spends = (Array.isArray(data.spends) ? data.spends : [])
+    .filter((x) => x && isValidDate(x.date) && typeof x.name === 'string' && int(x.amount) > 0)
+    .map((x) => ({
+      id: String(x.id || newId()),
+      date: x.date,
+      name: x.name.trim().slice(0, 30) || '이름 없음',
+      amount: int(x.amount),
+      ...(typeof x.planId === 'string' ? { planId: x.planId } : {}),
+    }));
+  return { version: 1, settings, plans, spends };
 }
 
 // 고정지출 항목. 예전 형식(합계 하나)이면 '고정지출' 항목 하나로 옮긴다.
@@ -124,6 +139,7 @@ export function createSampleState(today) {
     balance: 900000,
     balanceUpdatedAt: today,
     pendingOut: 250000,
+    salaryOverrides: {},
   };
   const { y } = parseDate(today);
   const yearEnd = `${y}-12-20` > addDays(today, 14) ? `${y}-12-20` : `${y + 1}-12-20`;
@@ -153,7 +169,7 @@ export function createSampleState(today) {
     plan.baselineMonthly = planMonth(plan, settings, today).monthlyNeed;
     return plan;
   });
-  return { version: 1, settings, plans };
+  return { version: 1, settings, plans, spends: [] };
 }
 
 export function hasSample(state) {

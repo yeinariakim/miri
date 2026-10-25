@@ -7,6 +7,9 @@ import {
   monthBudget,
   parseWon,
   periodLabel,
+  parseSpendLines,
+  salaryFor,
+  spendsIn,
   paydayIn,
   planMonth,
   prepCount,
@@ -414,4 +417,69 @@ test('월별 전망: 잔고를 넣은 적 없으면 이번 달도 월급 기준'
   assert.equal(b.months[0].reserve, 150000);
   assert.equal(b.months[0].spend, 3000000 - 600000 - 500000 - 150000);
   assert.equal(b.spendable, null);
+});
+
+// ---------- 그 달 월급 / 큰 지출 메모 ----------
+
+test('그 달만 실제 월급으로 고치면 그 달 계산에만 반영된다', () => {
+  const today = '2026-10-26'; // 이번 주기 10/25 ~ 11/24, 다음 11/25 ~
+  const s = { ...withBalance(0), salaryOverrides: { '2026-11-25': 3300000 } }; // 다음 달 +300,000
+  assert.equal(salaryFor(s, '2026-11-25'), 3300000);
+  assert.equal(salaryFor(s, '2026-12-25'), 3000000);
+
+  const b = monthBudget({ settings: s, plans: [plan('a', 2000000, '2027-01-10')] }, today);
+  const [now, next, after] = b.months;
+  assert.equal(next.salary, 3300000);
+  assert.equal(next.salaryEdited, true);
+  assert.equal(after.salary, 3000000);
+  assert.equal(after.salaryEdited, false);
+  // 다음 달 준비 가능 금액이 1,000,000으로 늘어서 이번 달 몫까지 다음 달이 받는다
+  assert.deepEqual(amounts(b.plans[0]), [0, 1000000, 700000]);
+  assert.equal(b.plans[0].shortfall, 300000);
+  assert.equal(next.spend, 3300000 - 600000 - 500000 - 1000000);
+  assert.equal(now.salary, 3000000);
+});
+
+test('이번 달 실제 월급은 이번 달 예상 여유 예산에 반영된다', () => {
+  const today = '2026-10-26';
+  const s = { ...settings, salaryOverrides: { '2026-10-25': 3500000 } };
+  const b = monthBudget({ settings: s, plans: [] }, today);
+  assert.equal(b.salary, 3500000);
+  assert.equal(b.salaryBase, 3000000);
+  assert.equal(b.free, 3500000 - 600000 - 500000 - 1200000);
+});
+
+test('큰 지출 메모: "렌즈 30"처럼 만원 단위로 적어도 읽는다', () => {
+  const text = `렌즈 30
+수련회 35
+비행기 55만
+축의 200,000원
+할머니 10, 대전 10
+땅콩 2.5만
+이름만
+30`;
+  const { items, errors } = parseSpendLines(text);
+  assert.deepEqual(items, [
+    { name: '렌즈', amount: 300000 },
+    { name: '수련회', amount: 350000 },
+    { name: '비행기', amount: 550000 },
+    { name: '축의', amount: 200000 },
+    { name: '할머니', amount: 100000 },
+    { name: '대전', amount: 100000 },
+    { name: '땅콩', amount: 25000 },
+  ]);
+  assert.deepEqual(errors, ['이름만', '30']);
+  assert.equal(items.reduce((s, x) => s + x.amount, 0), 1625000);
+});
+
+test('큰 지출 메모는 월급 주기별로 모으고, 계산에는 넣지 않는다', () => {
+  const spends = [
+    { id: '1', date: '2026-10-24', name: '지난 달', amount: 100000 },
+    { id: '2', date: '2026-10-25', name: '렌즈', amount: 300000 },
+    { id: '3', date: '2026-11-24', name: '축의', amount: 200000 },
+  ];
+  assert.deepEqual(spendsIn(spends, '2026-10-25', '2026-11-24').map((x) => x.id), ['2', '3']);
+  const before = monthBudget({ settings: withBalance(500000), plans: [] }, '2026-10-26');
+  const after = monthBudget({ settings: withBalance(500000), plans: [], spends }, '2026-10-26');
+  assert.equal(after.spendable, before.spendable);
 });
