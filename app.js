@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.26-2';
+const VERSION = '2026.10.26-3';
 
 const today = () => C.todayStr();
 
@@ -182,6 +182,10 @@ function viewHome() {
   const sp = b.spent;
   const haveNeg = b.have < 0;
   const haveText = won(b.have);
+  const keepNames = b.plans
+    .filter((p) => p.thisMonth > 0)
+    .map((p) => esc(p.name))
+    .join(', ');
   const spends = [...sp.list].sort((a, c) => ((a.ts || a.date) < (c.ts || c.date) ? 1 : -1));
   const upcoming = b.plans.filter((p) => p.status !== 'done').sort(byDue).slice(0, 3);
 
@@ -202,24 +206,32 @@ function viewHome() {
       <p class="hero-amount num ${haveNeg ? 'neg' : ''} ${sizeClass(haveText)}">${haveText}</p>
       ${
         b.salary
-          ? `${splitBar(now, b)}
-             <ul class="hero-bill">
-               ${heroRow('월급', b.salary, '')}
-               ${heroRow('고정지출', b.fixed)}
-               ${b.savings ? heroRow('적금', b.savings) : ''}
-               ${sp.out ? heroRow('이번 달 쓴 돈', sp.out) : ''}
-               ${sp.fromPrior ? heroRow('계획에 모아 둔 돈에서', sp.fromPrior, '+') : ''}
-               ${sp.income ? heroRow('들어온 돈', sp.income, '+') : ''}
+          ? `<ul class="hero-bill hero-main">
+               <li><span>생활비 남은 돈</span><span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span></li>
+               ${
+                 b.keep
+                   ? `<li><span>이번 달 모을 돈${keepNames ? `<small>${keepNames}</small>` : ''}</span><b class="num">${won(b.keep)}</b></li>`
+                   : ''
+               }
              </ul>
-             <div class="hero-sub">
-               <p class="hero-sub-title">이 중에서 떼어 둘 돈</p>
+             ${b.free < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족 ${won(-b.free)}</b> · 계획까지 다 하기엔 모자라요</span></p>` : ''}
+             <details class="hero-more">
+               <summary>계산 보기${icon('chevronRight')}</summary>
+               ${splitBar(now, b)}
                <ul class="hero-bill">
-                 <li><span><span class="bill-sign" aria-hidden="true">−</span>생활비 남은 돈</span><span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span></li>
-                 ${b.keep ? heroRow('계획에 모을 돈', b.keep) : ''}
+                 ${heroRow('월급', b.salary, '')}
+                 ${heroRow('고정지출', b.fixed)}
+                 ${b.savings ? heroRow('적금', b.savings) : ''}
+                 ${sp.out ? heroRow('이번 달 쓴 돈', sp.out) : ''}
+                 ${sp.fromPrior ? heroRow('계획에 모아 둔 돈에서', sp.fromPrior, '+') : ''}
+                 ${sp.income ? heroRow('들어온 돈', sp.income, '+') : ''}
+                 <li class="hero-free"><span>= 지금 남은 돈</span><b class="num">${haveText}</b></li>
+                 ${heroRow('생활비 남은 돈', b.livingKeep)}
+                 ${b.keep ? heroRow('이번 달 모을 돈', b.keep) : ''}
                  ${now.shortfall ? heroRow('기한인데 못 모은 돈', now.shortfall) : ''}
-                 <li class="hero-free"><span>더 쓰거나 저축할 돈</span>${leftCell(b.free)}</li>
+                 <li class="hero-free"><span>= 더 쓰거나 저축할 돈</span>${leftCell(b.free)}</li>
                </ul>
-             </div>`
+             </details>`
           : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`
       }
     </section>
@@ -313,24 +325,23 @@ function appMark() {
 function suggestionCard(sug) {
   const items = sug.items.filter((i) => i.needed);
   return `
-    <section class="card alert-card" aria-labelledby="sug-title">
-      <h2 id="sug-title" class="alert-title">${icon('alertOctagon')}<span><b>부족</b> · ${
+    <details class="card alert-card">
+      <summary class="alert-title">${icon('alertOctagon')}<span><b>부족</b> · ${
         sug.shortfall ? `기한까지 ${won(sug.shortfall)} 못 모아요` : `이번 달 ${won(sug.overspend)} 모자라요`
-      }</span></h2>
+      }</span><span class="alert-more">해결 방법${icon('chevronRight')}</span></summary>
       ${
         items.length
-          ? `<p class="card-sub">이렇게 늦추면 돼요 (필수 계획 제외, 자동으로 바꾸지 않아요)</p>
-             <ul class="sug-lines">${items
-               .map((it) => {
-                 const o = it.options.find((x) => x.deficitAfter < sug.deficit) || it.options[it.options.length - 1];
-                 return `<li><a href="#/edit/${encodeURIComponent(it.id)}"><span><b>${esc(it.name)}</b> ${o.months}개월 늦추기</span><span class="num muted">${
-                   o.deficitAfter > 0 ? `부족 ${won(o.deficitAfter)}` : '해결'
-                 }</span>${icon('chevronRight')}</a></li>`;
-               })
-               .join('')}</ul>`
-          : `<p class="card-sub">늦춰서 해결되는 계획이 없어요. 금액이나 생활비를 조정해 보세요.</p>`
+          ? `<ul class="sug-lines">${items
+              .map((it) => {
+                const o = it.options.find((x) => x.deficitAfter < sug.deficit) || it.options[it.options.length - 1];
+                return `<li><a href="#/edit/${encodeURIComponent(it.id)}"><span><b>${esc(it.name)}</b> ${o.months}개월 늦추기</span><span class="num muted">${
+                  o.deficitAfter > 0 ? `부족 ${won(o.deficitAfter)}` : '해결'
+                }</span>${icon('chevronRight')}</a></li>`;
+              })
+              .join('')}</ul>`
+          : `<p class="card-sub">계획 금액이나 생활비를 줄여 보세요.</p>`
       }
-    </section>`;
+    </details>`;
 }
 
 function upcomingRow(p) {
