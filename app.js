@@ -170,19 +170,17 @@ window.addEventListener('hashchange', () => {
 
 // ---------- 홈 ----------
 
-// 더 저축할 돈 칸: 마이너스면 무엇을 못 하게 되는지 (적금부터, 그래도 모자라면 생활비)
-const lackWhat = (m) => (m.livingLack ? (m.savingsLack ? '적금·생활비 모자람' : '생활비 모자람') : '적금 못 넣음');
+// 더 저축할 돈 칸: 마이너스면 생활비가 줄어든다 (고정지출·적금은 무조건 나감)
+const lackWhat = (m) => (m.overLack ? '생활비 다 줄여도 모자람' : '생활비 줄이기');
 const leftCell = (m) =>
   m.left < 0
     ? `<span class="left-neg"><b class="num neg">${icon('alertOctagon')}−${won(-m.left)}</b><small>${lackWhat(m)}</small></span>`
     : `<b class="num accent">${won(m.left)}</b>`;
 
 // 마이너스인 달 설명 한 줄
-function lackNote(m, savings, living) {
-  if (!m.livingLack) return `적금 ${won(savings)} 중 <b>${won(m.savingsLack)}</b>을 못 넣어요 · 생활비 ${won(living)}은 그대로예요`;
-  return m.savingsLack
-    ? `적금을 다 못 넣고, 생활비도 <b>${won(m.livingLack)}</b> 줄여야 해요`
-    : `생활비를 <b>${won(m.livingLack)}</b> 줄여야 해요`;
+function lackNote(m, living) {
+  if (m.overLack) return `생활비를 다 줄여도 <b>${won(m.overLack)}</b> 모자라요 · 통장에 있던 돈으로 메워야 해요`;
+  return `생활비 ${won(living)} 중 <b>${won(living - m.livingLack)}</b>만 쓸 수 있어요 · ${won(m.livingLack)} 줄여야 해요`;
 }
 
 function viewHome() {
@@ -225,7 +223,7 @@ function viewHome() {
                    : ''
                }
              </ul>
-             ${b.free < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(now, b.savings, b.living)}</span></p>` : ''}
+             ${b.free < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(now, b.living)}</span></p>` : ''}
              <details class="hero-more">
                <summary>계산 보기${icon('chevronRight')}</summary>
                ${splitBar(now, b)}
@@ -445,7 +443,7 @@ function viewCalendar() {
     <header class="topbar">
       <div>
         <h1 class="page-title">월별</h1>
-        <p class="brand-sub">생활비는 먼저 떼고, 달마다 저축할 돈 · 눌러서 자세히</p>
+        <p class="brand-sub">고정지출·적금 빼고 남은 돈으로 생활비와 저축</p>
       </div>
     </header>
     <section class="card month-table">
@@ -500,14 +498,14 @@ function monthRow(m, b) {
           ${billRow(`고정지출`, m.fixed, {
             sub: items.map((it) => (it.edited ? `<b class="edited">${esc(it.name)} ${won(it.amount)}</b>` : esc(it.name))).join(' · '),
           })}
-          ${billRow('생활비', m.living, { sub: '쓸 돈 · 먼저 떼어 둬요' })}
+          ${billRow('적금', b.savings)}
           ${m.hit ? billRow(m.hit > 0 ? '이번 달 지출' : '이번 달 더해진 돈', Math.abs(m.hit), { sign: m.hit > 0 ? '−' : '+' }) : ''}
           ${billSubs(spentSubs)}
           <li class="bill-row bill-subtotal">
-            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>저축할 수 있는 돈</span></span>
-            <b class="num ${m.canSave < 0 ? 'neg' : ''}">${won(m.canSave)}</b>
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>쓸 수 있는 돈</span></span>
+            <b class="num ${m.canUse < 0 ? 'neg' : ''}">${won(m.canUse)}</b>
           </li>
-          ${billRow('적금', b.savings)}
+          ${billRow('생활비', m.living)}
           ${billRow('모으기', m.reserve)}
           ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
           ${m.shortfall ? billRow('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
@@ -516,7 +514,7 @@ function monthRow(m, b) {
             ${leftCell(m)}
           </li>
         </ul>
-        ${m.left < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(m, b.savings, m.living)}</span></p>` : ''}
+        ${m.left < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(m, m.living)}</span></p>` : ''}
         ${
           m.dues.length
             ? `<p class="mr-dues">${icon('calendar')}<span>이 달에 쓸 계획: ${m.dues
@@ -710,7 +708,7 @@ function viewForm(r) {
         <div class="pv-free">
           <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 더 저축할 돈</p>
           <p class="pv-change num"><span>${won(pv.freeBefore)}</span>${icon('chevronRight')}<b class="${neg ? 'neg' : 'accent'}">${won(pv.freeAfter)}</b></p>
-          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>모자라요</b> · 적금이나 생활비를 줄여야 해요</span></p>` : ''}
+          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>모자라요</b> · 생활비를 줄여야 해요</span></p>` : ''}
         </div>`;
     } else {
       $preview.className = 'preview empty-pv';
