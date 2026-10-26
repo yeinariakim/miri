@@ -555,19 +555,19 @@ test('지금 남은 돈: 계획 지출은 쓴 만큼 빠지고, 지난 달까지
   assert.equal(b.free, 400000);
 });
 
-test('더 저축할 돈이 마이너스면 생활비는 두고 적금부터 못 넣는다', () => {
+test('더 저축할 돈이 마이너스면 고정지출·적금은 그대로, 생활비가 줄어든다', () => {
   const today = '2026-10-26';
-  // 저축할 수 있는 돈 = 3,000,000 - 600,000 - 1,200,000 - 1,000,000 = 200,000 → 적금 500,000 중 300,000 못 넣음
+  // 쓸 수 있는 돈 = 3,000,000 - 600,000 - 500,000 - 1,000,000 = 900,000 → 생활비 1,200,000 중 300,000 줄이기
   let [now, next] = monthBudget({ settings, plans: [], spends: [spend('수리', 1000000)] }, today).months;
-  assert.equal(now.canSave, 200000);
+  assert.equal(now.canUse, 900000);
   assert.equal(now.left, -300000);
-  assert.equal(now.savingsLack, 300000);
-  assert.equal(now.livingLack, 0);
-  assert.equal(next.canSave, 1200000);
-  assert.equal(next.savingsLack, 0);
-  // 적금으로도 모자라면 생활비가 줄어든다
-  [now] = monthBudget({ settings, plans: [], spends: [spend('수리', 1800000)] }, today).months;
-  assert.equal(now.left, -1100000);
-  assert.equal(now.savingsLack, 500000);
-  assert.equal(now.livingLack, 600000);
+  assert.equal(now.livingLack, 300000);
+  assert.equal(now.overLack, 0);
+  assert.equal(next.canUse, 1900000);
+  assert.equal(next.livingLack, 0);
+  // 생활비를 다 줄여도 모자라면 그 차이는 따로 메워야 한다
+  [now] = monthBudget({ settings, plans: [], spends: [spend('수리', 2500000)] }, today).months;
+  assert.equal(now.left, -1800000);
+  assert.equal(now.livingLack, 1200000);
+  assert.equal(now.overLack, 600000);
 });

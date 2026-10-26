@@ -417,9 +417,9 @@ export function monthBudget(state, today) {
 }
 
 // 월별 전망: 월급 주기마다 모을 돈과 남는 돈(더 저축할 돈).
-//   저축할 수 있는 돈 = 월급 - 고정지출 - 생활비 (이번 달은 이번 달 지출도 빼고 들어온 돈은 더한다)
-//   남는 돈 = 저축할 수 있는 돈 - 적금 - 모을 돈 - 그 달이 기한인데 못 채운 금액
-//   남는 돈이 마이너스면 생활비는 그대로 두고 적금부터 못 넣는다고 본다. 적금으로도 모자라면 생활비가 줄어든다.
+//   쓸 수 있는 돈 = 월급 - 고정지출 - 적금 (이번 달은 이번 달 지출도 빼고 들어온 돈은 더한다)
+//   남는 돈 = 쓸 수 있는 돈 - 생활비 - 모을 돈 - 그 달이 기한인데 못 채운 금액
+//   고정지출과 적금은 무조건 나가니까, 남는 돈이 마이너스면 생활비가 줄어든다. 생활비를 다 줄여도 모자라면 그 차이는 따로 메워야 한다.
 export function monthlyOutlook(settings, plans, starts, spent = null, closedNow = []) {
   const n = Math.max(6, starts.length);
   const all = [...starts];
@@ -444,10 +444,10 @@ export function monthlyOutlook(settings, plans, starts, spent = null, closedNow 
     const reserve = allocs.reduce((sum, a) => sum + a.amount, 0);
     const shortfall = dues.reduce((sum, d) => sum + d.shortfall, 0);
     const hit = k === 0 && spent ? spent.hit : 0;
-    const canSave = salary - fixed - settings.living - hit;
-    const left = canSave - settings.savings - reserve - shortfall;
+    const canUse = salary - fixed - settings.savings - hit;
+    const left = canUse - settings.living - reserve - shortfall;
     const lack = Math.max(0, -left);
-    const savingsLack = Math.min(lack, settings.savings);
+    const livingLack = Math.min(lack, settings.living);
     return {
       k,
       start: all[k],
@@ -461,10 +461,10 @@ export function monthlyOutlook(settings, plans, starts, spent = null, closedNow 
       spent: k === 0 ? spent : null,
       hit,
       reserve,
-      canSave,
+      canUse,
       left,
-      savingsLack,
-      livingLack: lack - savingsLack,
+      livingLack,
+      overLack: lack - livingLack,
       allocs,
       dues,
       shortfall,
