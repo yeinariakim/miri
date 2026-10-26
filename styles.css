@@ -2540,3 +2540,83 @@ select.input {
   flex: 1;
   justify-content: center;
 }
+
+/* ---------- 홈 간단히: 핵심 두 줄 + 계산 보기 ---------- */
+
+.hero-main li > span:first-child {
+  flex-direction: column;
+  gap: 0;
+  color: var(--ink);
+}
+
+.hero-main small {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.hero-main b {
+  font-size: 17px;
+}
+
+.hero-more {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hero-more > summary,
+.alert-card > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.hero-more > summary::-webkit-details-marker,
+.alert-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.hero-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.hero-more > summary .ic,
+.alert-more .ic {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s;
+}
+
+.hero-more[open] > summary .ic,
+.alert-card[open] .alert-more .ic {
+  transform: rotate(90deg);
+}
+
+.hero-more[open] > summary {
+  margin-bottom: 10px;
+}
+
+.alert-card[open] > summary {
+  margin-bottom: 12px;
+}
+
+.alert-card .alert-title {
+  align-items: center;
+}
+
+.alert-more {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
