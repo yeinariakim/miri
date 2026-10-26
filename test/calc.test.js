@@ -524,3 +524,33 @@ test('이번 달 고정지출을 고치면 이번 달 남는 돈이 바뀐다', 
   assert.equal(b.fixed, 700000);
   assert.equal(b.free, 3000000 - 700000 - 500000 - 1200000);
 });
+
+test('지금 남은 돈 = 월급 - 고정 - 적금 - 이번 달 쓴 돈 + 들어온 돈, 그중 떼어 둘 돈을 빼면 남는 돈', () => {
+  const today = '2026-10-28';
+  const spends = [spend('렌즈', 100000, 'other'), spend('장보기', 300000, 'living'), spend('환급', 50000, 'income')];
+  const b = monthBudget({ settings, plans: [plan('a', 300000, '2026-12-10')], spends }, today);
+  assert.equal(b.have, 3000000 - 600000 - 500000 - 100000 - 300000 + 50000);
+  assert.equal(b.livingKeep, 900000);
+  assert.equal(b.keep, 150000); // 계획에 모을 돈
+  assert.equal(b.have - b.livingKeep - b.keep, b.free);
+});
+
+test('지금 남은 돈: 계획 지출은 쓴 만큼 빠지고, 지난 달까지 모아 둔 돈은 다시 더해진다', () => {
+  const today = '2026-10-28';
+  const prior = { ...plan('p', 300000, '2026-11-20', { saved: 200000 }), stage: 'spent' };
+  const more = monthBudget({ settings, plans: [prior], spends: [spend('생신', 250000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(more.have, 1900000 - 250000 + 200000);
+  assert.equal(more.keep, 0);
+  assert.equal(more.have - more.livingKeep - more.keep, more.free);
+
+  const less = monthBudget({ settings, plans: [prior], spends: [spend('생신', 150000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(less.have, 1900000 - 150000 + 200000); // 남은 50,000도 돌아옴
+  assert.equal(less.keep, 0);
+
+  // 이번 달 월급에서 모은 돈으로 쓰면 그냥 빠진다
+  const now = { ...plan('p', 300000, '2026-11-20', { history: [{ date: '2026-10-26', delta: 300000 }] }), stage: 'spent' };
+  const b = monthBudget({ settings, plans: [now], spends: [spend('생신', 300000, 'plan', { planId: 'p' })] }, today);
+  assert.equal(b.have, 1900000 - 300000);
+  assert.equal(b.keep, 0);
+  assert.equal(b.free, 400000);
+});

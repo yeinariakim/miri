@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.26-1';
+const VERSION = '2026.10.26-2';
 
 const today = () => C.todayStr();
 
@@ -180,8 +180,8 @@ function viewHome() {
   const sug = C.suggestAdjustments(state, t);
   const [now, next] = b.months;
   const sp = b.spent;
-  const neg = b.free < 0;
-  const freeText = won(b.free);
+  const haveNeg = b.have < 0;
+  const haveText = won(b.have);
   const spends = [...sp.list].sort((a, c) => ((a.ts || a.date) < (c.ts || c.date) ? 1 : -1));
   const upcoming = b.plans.filter((p) => p.status !== 'done').sort(byDue).slice(0, 3);
 
@@ -198,14 +198,30 @@ function viewHome() {
     </header>
 
     <section class="hero" aria-labelledby="hero-label">
-      <p class="hero-label" id="hero-label">${now.label} 남는 돈 <span class="hero-tag">저축할 돈</span></p>
-      <p class="hero-amount num ${neg ? 'neg' : ''} ${sizeClass(freeText)}">${freeText}</p>
-      ${neg ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족</b> · ${won(-b.free)} 모자라요</span></p>` : ''}
-      ${b.salary ? splitBar(now, b) : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`}
-      <div class="living-row">
-        <span>생활비 남은 돈</span>
-        <span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span>
-      </div>
+      <p class="hero-label" id="hero-label">지금 남은 돈 <span class="hero-tag">${now.label} 월급에서</span></p>
+      <p class="hero-amount num ${haveNeg ? 'neg' : ''} ${sizeClass(haveText)}">${haveText}</p>
+      ${
+        b.salary
+          ? `${splitBar(now, b)}
+             <ul class="hero-bill">
+               ${heroRow('월급', b.salary, '')}
+               ${heroRow('고정지출', b.fixed)}
+               ${b.savings ? heroRow('적금', b.savings) : ''}
+               ${sp.out ? heroRow('이번 달 쓴 돈', sp.out) : ''}
+               ${sp.fromPrior ? heroRow('계획에 모아 둔 돈에서', sp.fromPrior, '+') : ''}
+               ${sp.income ? heroRow('들어온 돈', sp.income, '+') : ''}
+             </ul>
+             <div class="hero-sub">
+               <p class="hero-sub-title">이 중에서 떼어 둘 돈</p>
+               <ul class="hero-bill">
+                 <li><span><span class="bill-sign" aria-hidden="true">−</span>생활비 남은 돈</span><span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span></li>
+                 ${b.keep ? heroRow('계획에 모을 돈', b.keep) : ''}
+                 ${now.shortfall ? heroRow('기한인데 못 모은 돈', now.shortfall) : ''}
+                 <li class="hero-free"><span>더 쓰거나 저축할 돈</span>${leftCell(b.free)}</li>
+               </ul>
+             </div>`
+          : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`
+      }
     </section>
 
     <button class="btn btn-primary btn-block" data-action="spend-new">${icon('plus')}지출 넣기</button>
@@ -245,14 +261,17 @@ function viewHome() {
   `;
 }
 
+const heroRow = (label, v, sign = '−') =>
+  `<li><span>${sign ? `<span class="bill-sign" aria-hidden="true">${sign}</span>` : ''}${label}</span><b class="num">${won(v)}</b></li>`;
+
 // 월급이 어디로 나뉘는지 한 줄 막대 + 작은 범례
 function splitBar(m, b) {
   const segs = [
     { key: 'fixed', label: '고정', v: m.fixed },
     { key: 'savings', label: '적금', v: b.savings },
-    { key: 'reserve', label: '모으기', v: m.reserve },
-    { key: 'living', label: '생활비', v: m.living },
-    { key: 'spent', label: '지출', v: Math.max(0, m.hit) },
+    { key: 'spent', label: '쓴 돈', v: Math.max(0, b.spent.out - b.spent.fromPrior) },
+    { key: 'living', label: '생활비 남음', v: b.livingKeep },
+    { key: 'reserve', label: '모으기', v: Math.max(0, b.keep) },
     { key: 'free', label: '남음', v: Math.max(0, m.left) },
   ];
   const total = Math.max(m.salary, segs.reduce((a, x) => a + x.v, 0));
