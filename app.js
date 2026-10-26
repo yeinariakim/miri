@@ -170,9 +170,20 @@ window.addEventListener('hashchange', () => {
 
 // ---------- 홈 ----------
 
-// 남는 돈 칸: 마이너스면 아이콘 + '부족'
-const leftCell = (v) =>
-  v < 0 ? `<b class="num neg">${icon('alertOctagon')}부족 ${won(-v)}</b>` : `<b class="num accent">${won(v)}</b>`;
+// 더 저축할 돈 칸: 마이너스면 무엇을 못 하게 되는지 (적금부터, 그래도 모자라면 생활비)
+const lackWhat = (m) => (m.livingLack ? (m.savingsLack ? '적금·생활비 모자람' : '생활비 모자람') : '적금 못 넣음');
+const leftCell = (m) =>
+  m.left < 0
+    ? `<span class="left-neg"><b class="num neg">${icon('alertOctagon')}−${won(-m.left)}</b><small>${lackWhat(m)}</small></span>`
+    : `<b class="num accent">${won(m.left)}</b>`;
+
+// 마이너스인 달 설명 한 줄
+function lackNote(m, savings, living) {
+  if (!m.livingLack) return `적금 ${won(savings)} 중 <b>${won(m.savingsLack)}</b>을 못 넣어요 · 생활비 ${won(living)}은 그대로예요`;
+  return m.savingsLack
+    ? `적금을 다 못 넣고, 생활비도 <b>${won(m.livingLack)}</b> 줄여야 해요`
+    : `생활비를 <b>${won(m.livingLack)}</b> 줄여야 해요`;
+}
 
 function viewHome() {
   const t = today();
@@ -214,7 +225,7 @@ function viewHome() {
                    : ''
                }
              </ul>
-             ${b.free < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span><b>부족 ${won(-b.free)}</b> · 계획까지 다 하기엔 모자라요</span></p>` : ''}
+             ${b.free < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(now, b.savings, b.living)}</span></p>` : ''}
              <details class="hero-more">
                <summary>계산 보기${icon('chevronRight')}</summary>
                ${splitBar(now, b)}
@@ -229,7 +240,7 @@ function viewHome() {
                  ${heroRow('생활비 남은 돈', b.livingKeep)}
                  ${b.keep ? heroRow('이번 달 모을 돈', b.keep) : ''}
                  ${now.shortfall ? heroRow('기한인데 못 모은 돈', now.shortfall) : ''}
-                 <li class="hero-free"><span>= 더 쓰거나 저축할 돈</span>${leftCell(b.free)}</li>
+                 <li class="hero-free"><span>= 더 저축할 돈</span>${leftCell(now)}</li>
                </ul>
              </details>`
           : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`
@@ -251,7 +262,7 @@ function viewHome() {
       next
         ? `<a class="card next-card" href="#/calendar">
              <span class="next-label">${next.label}</span>
-             <span class="next-vals num"><span>모을 돈 <b>${won(next.reserve)}</b></span><span>남을 돈 ${leftCell(next.left)}</span></span>
+             <span class="next-vals num"><span>모을 돈 <b>${won(next.reserve)}</b></span><span>더 저축할 돈 ${leftCell(next)}</span></span>
              ${icon('chevronRight')}
            </a>`
         : ''
@@ -434,11 +445,11 @@ function viewCalendar() {
     <header class="topbar">
       <div>
         <h1 class="page-title">월별</h1>
-        <p class="brand-sub">달마다 모을 돈과 남는 돈 · 눌러서 자세히</p>
+        <p class="brand-sub">생활비는 먼저 떼고, 달마다 저축할 돈 · 눌러서 자세히</p>
       </div>
     </header>
     <section class="card month-table">
-      <div class="mt-head" aria-hidden="true"><span></span><span>모을 돈</span><span>남는 돈</span></div>
+      <div class="mt-head" aria-hidden="true"><span></span><span>모을 돈</span><span>더 저축할 돈</span></div>
       ${b.months.map((m) => monthRow(m, b)).join('')}
     </section>
     ${pastSpends(b)}
@@ -481,7 +492,7 @@ function monthRow(m, b) {
       <summary>
         <span class="mr-label">${m.label}${m.k === 0 ? '<small>이번 달</small>' : m.k === 1 ? '<small>다음 달</small>' : ''}</span>
         <span class="num">${won(m.reserve)}</span>
-        <span>${leftCell(m.left)}</span>
+        <span>${leftCell(m)}</span>
       </summary>
       <div class="mr-body">
         <ul class="bill">
@@ -489,18 +500,23 @@ function monthRow(m, b) {
           ${billRow(`고정지출`, m.fixed, {
             sub: items.map((it) => (it.edited ? `<b class="edited">${esc(it.name)} ${won(it.amount)}</b>` : esc(it.name))).join(' · '),
           })}
-          ${billRow('적금', b.savings)}
-          ${billRow('생활비', m.living)}
-          ${billRow('모으기', m.reserve)}
-          ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
+          ${billRow('생활비', m.living, { sub: '쓸 돈 · 먼저 떼어 둬요' })}
           ${m.hit ? billRow(m.hit > 0 ? '이번 달 지출' : '이번 달 더해진 돈', Math.abs(m.hit), { sign: m.hit > 0 ? '−' : '+' }) : ''}
           ${billSubs(spentSubs)}
+          <li class="bill-row bill-subtotal">
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>저축할 수 있는 돈</span></span>
+            <b class="num ${m.canSave < 0 ? 'neg' : ''}">${won(m.canSave)}</b>
+          </li>
+          ${billRow('적금', b.savings)}
+          ${billRow('모으기', m.reserve)}
+          ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
           ${m.shortfall ? billRow('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
           <li class="bill-row bill-total">
-            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>남는 돈</span></span>
-            ${leftCell(m.left)}
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>더 저축할 돈</span></span>
+            ${leftCell(m)}
           </li>
         </ul>
+        ${m.left < 0 ? `<p class="hero-short">${icon('alertOctagon')}<span>${lackNote(m, b.savings, m.living)}</span></p>` : ''}
         ${
           m.dues.length
             ? `<p class="mr-dues">${icon('calendar')}<span>이 달에 쓸 계획: ${m.dues
@@ -692,9 +708,9 @@ function viewForm(r) {
             : ''
         }
         <div class="pv-free">
-          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 남는 돈</p>
+          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 더 저축할 돈</p>
           <p class="pv-change num"><span>${won(pv.freeBefore)}</span>${icon('chevronRight')}<b class="${neg ? 'neg' : 'accent'}">${won(pv.freeAfter)}</b></p>
-          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>부족</b> · 남는 돈이 마이너스가 돼요</span></p>` : ''}
+          ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>모자라요</b> · 적금이나 생활비를 줄여야 해요</span></p>` : ''}
         </div>`;
     } else {
       $preview.className = 'preview empty-pv';
@@ -904,7 +920,7 @@ function spendSheetHTML() {
                         </select>
                         ${chosen ? `<span class="field-hint">모아 둔 돈에서 나가고, 이 계획은 '지출 완료'가 돼요.</span>` : ''}`
                      : `<span class="field-hint">준비 중인 계획이 없어요.</span>`
-                   : `<span class="field-hint">${d.source === 'living' ? '생활비에서 빠져요.' : '남는 돈에서 바로 빠져요.'}</span>`
+                   : `<span class="field-hint">${d.source === 'living' ? '생활비에서 빠져요.' : '저축할 돈에서 바로 빠져요.'}</span>`
                }
              </fieldset>`
       }

@@ -2620,3 +2620,29 @@ select.input {
   font-weight: 500;
   color: var(--ink-2);
 }
+
+/* 더 저축할 돈이 마이너스일 때: 금액 + 무엇이 모자란지 */
+.left-neg {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.left-neg small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+/* 월별 계산 중간 합계: 저축할 수 있는 돈 */
+.bill-subtotal {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  font-weight: 700;
+}
+
+.mr-body .hero-short {
+  font-size: 13px;
+}
