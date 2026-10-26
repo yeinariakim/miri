@@ -2221,19 +2221,48 @@ select.input {
   border-radius: 3px;
 }
 
-.living-row {
+.hero-bill {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.hero-bill li {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  margin-top: 6px;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
-  font-size: 14px;
 }
 
-.living-row b {
+.hero-bill li > span:first-child {
+  display: inline-flex;
+  gap: 4px;
+  color: var(--ink-2);
+}
+
+.hero-bill .hero-free {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--accent-soft));
+  font-weight: 600;
+}
+
+.hero-bill .hero-free > span:first-child {
+  color: var(--ink);
+}
+
+.hero-bill .hero-free b {
   font-size: 17px;
+}
+
+.hero-sub-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
 }
 
 .spend-card {

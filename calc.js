@@ -265,9 +265,15 @@ export function spendSummary(state, start, end) {
   });
   // 계획에서 쓰고 남은 돈은 돌아온다
   let returned = 0;
+  // 지난 달까지 모아 둔 돈에서 꺼낸 몫 (이번 달 월급 밖에서 온 돈)
+  let fromPrior = 0;
   for (const [id, left] of savedLeft) {
     const plan = state.plans.find((p) => p.id === id);
-    if (plan && !isActive(plan)) returned += left;
+    if (!plan) continue;
+    const back = isActive(plan) ? 0 : left;
+    returned += back;
+    const used = Math.max(0, savedTotal(plan)) - left + back;
+    fromPrior += Math.min(used, Math.max(0, savedBefore(plan, start)));
   }
   const sum = (src) => list.filter((x) => x.source === src).reduce((a, x) => a + x.amount, 0);
   const living = sum('living');
@@ -277,6 +283,9 @@ export function spendSummary(state, start, end) {
   const livingOver = Math.max(0, living - s.living);
   return {
     list,
+    // 이번 달 쓴 돈 전부 (들어온 돈 제외)
+    out: living + other + list.filter((x) => x.source === 'plan').reduce((a, x) => a + x.amount, 0),
+    fromPrior,
     living,
     livingLeft: s.living - living,
     livingOver,
@@ -381,6 +390,9 @@ export function monthBudget(state, today) {
 
   const months = monthlyOutlook(s, plans, starts, spent, closedNow);
   const now = months[0];
+  // 지금 남은 돈 = 이번 달 월급 - 고정지출 - 적금 - 이번 달 쓴 돈 + 들어온 돈 (+ 지난 달까지 모아 둔 돈에서 꺼내 쓴 돈)
+  const have = now.salary - now.fixed - s.savings - spent.out + spent.income + spent.fromPrior;
+  const livingKeep = Math.max(0, spent.livingLeft);
   return {
     period,
     salary: now.salary,
@@ -393,7 +405,11 @@ export function monthBudget(state, today) {
     reserveLeft: plans.reduce((sum, p) => sum + p.thisMonthLeft, 0),
     shortfall: plans.reduce((sum, p) => sum + p.shortfall, 0),
     spent,
-    // 이번 달 남는 돈 (저축할 돈)
+    have,
+    // 지금 남은 돈 중에서 떼어 둘 돈: 남은 생활비, 계획에 아직 모을 돈, 기한인데 못 모은 돈
+    livingKeep,
+    keep: have - livingKeep - now.shortfall - now.left,
+    // 이번 달 남는 돈 (저축할 돈) = 지금 남은 돈 - 떼어 둘 돈
     free: now.left,
     months,
     plans,
