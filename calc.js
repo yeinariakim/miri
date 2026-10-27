@@ -220,6 +220,12 @@ export function salaryFor(settings, start) {
   return typeof v === 'number' ? v : settings.salary;
 }
 
+// 그 달 생활비. 기본 생활비를 쓰고, 그 달만 고쳤으면(투자할 돈을 더 모으려고 줄이는 등) 그 값을 쓴다.
+export function livingFor(settings, start) {
+  const v = settings.livingOverrides?.[start];
+  return typeof v === 'number' ? v : settings.living;
+}
+
 // 그 달 고정지출 항목. 기본 금액을 쓰고, 그 달만 고친 항목(보너스 달 십일조 등)은 그 값을 쓴다.
 export function fixedItemsFor(settings, start) {
   const o = settings.fixedOverrides?.[start] || {};
@@ -236,7 +242,7 @@ export function fixedFor(settings, start) {
 
 // 매달 준비 가능 금액 = 월급 - 고정지출 - 적금 - 생활비
 function rawCapacity(settings, start) {
-  return salaryFor(settings, start) - fixedFor(settings, start) - settings.savings - settings.living;
+  return salaryFor(settings, start) - fixedFor(settings, start) - settings.savings - livingFor(settings, start);
 }
 
 export function monthlyCapacity(settings, start) {
@@ -280,14 +286,15 @@ export function spendSummary(state, start, end) {
   const other = sum('other');
   const income = sum('income');
   const planExtra = list.filter((x) => x.source === 'plan').reduce((a, x) => a + x.extra, 0);
-  const livingOver = Math.max(0, living - s.living);
+  const budget = livingFor(s, start);
+  const livingOver = Math.max(0, living - budget);
   return {
     list,
     // 이번 달 쓴 돈 전부 (들어온 돈 제외)
     out: living + other + list.filter((x) => x.source === 'plan').reduce((a, x) => a + x.amount, 0),
     fromPrior,
     living,
-    livingLeft: s.living - living,
+    livingLeft: budget - living,
     livingOver,
     other,
     income,
@@ -399,7 +406,8 @@ export function monthBudget(state, today) {
     salaryBase: s.salary,
     fixed: now.fixed,
     savings: s.savings,
-    living: s.living,
+    living: now.living,
+    livingBase: s.living,
     capacity: monthlyCapacity(s, period.start),
     reserve: now.reserve,
     reserveLeft: plans.reduce((sum, p) => sum + p.thisMonthLeft, 0),
@@ -409,7 +417,7 @@ export function monthBudget(state, today) {
     // 지금 남은 돈 중에서 떼어 둘 돈: 남은 생활비, 계획에 아직 모을 돈, 기한인데 못 모은 돈
     livingKeep,
     // 지갑 속 돈이 모자라 생활비가 줄어든 만큼 반영한 이번 달 생활비와 그중 남은 돈
-    livingBudget: s.living - now.livingLack,
+    livingBudget: now.living - now.livingLack,
     livingUsable: spent.livingLeft - now.livingLack,
     keep: have - livingKeep - now.shortfall - now.left,
     // 이번 달 남는 돈 (저축할 돈) = 지금 남은 돈 - 떼어 둘 돈
@@ -448,9 +456,10 @@ export function monthlyOutlook(settings, plans, starts, spent = null, closedNow 
     const shortfall = dues.reduce((sum, d) => sum + d.shortfall, 0);
     const hit = k === 0 && spent ? spent.hit : 0;
     const canUse = salary - fixed - settings.savings - hit;
-    const left = canUse - settings.living - reserve - shortfall;
+    const living = livingFor(settings, all[k]);
+    const left = canUse - living - reserve - shortfall;
     const lack = Math.max(0, -left);
-    const livingLack = Math.min(lack, settings.living);
+    const livingLack = Math.min(lack, living);
     return {
       k,
       start: all[k],
@@ -460,7 +469,8 @@ export function monthlyOutlook(settings, plans, starts, spent = null, closedNow 
       salaryEdited: salary !== settings.salary || typeof settings.salaryOverrides?.[all[k]] === 'number',
       fixed,
       fixedItems,
-      living: settings.living,
+      living,
+      livingEdited: typeof settings.livingOverrides?.[all[k]] === 'number',
       spent: k === 0 ? spent : null,
       hit,
       reserve,

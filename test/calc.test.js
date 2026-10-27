@@ -584,3 +584,21 @@ test('지갑 속 돈이 모자라면 홈의 생활비 남은 돈도 그만큼 �
   assert.equal(ok.livingBudget, 1200000);
   assert.equal(ok.livingUsable, 1100000);
 });
+
+test('그 달만 생활비를 줄이면 그 달 저금통이 늘고, 생활비 지출도 줄인 예산 기준', () => {
+  const today = '2026-10-26'; // 이번 주기 10/25 ~ 11/24, 다음 11/25 ~
+  const s = { ...settings, livingOverrides: { '2026-11-25': 900000 } }; // 다음 달만 300,000 줄임
+  const [now, next, after] = monthBudget({ settings: s, plans: [], spends: [] }, today).months;
+  assert.equal(now.living, 1200000);
+  assert.equal(next.living, 900000);
+  assert.equal(next.livingEdited, true);
+  assert.equal(next.left, now.left + 300000);
+  assert.equal(after.living, 1200000);
+  // 이번 달을 줄이면 생활비 지출도 줄인 예산을 넘긴 만큼 빠진다
+  const s2 = { ...settings, livingOverrides: { '2026-10-25': 1000000 } };
+  const b = monthBudget({ settings: s2, plans: [], spends: [spend('밥', 1100000, 'living')] }, today);
+  assert.equal(b.living, 1000000);
+  assert.equal(b.livingBase, 1200000);
+  assert.equal(b.spent.livingOver, 100000);
+  assert.equal(b.free, 700000 + 200000 - 100000);
+});

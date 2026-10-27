@@ -70,6 +70,12 @@ function normalizeState(data) {
         ])
         .filter(([, v]) => Object.keys(v).length),
     ),
+    // 그 달만 고친 생활비 { 월급 주기 시작일: 금액 }
+    livingOverrides: Object.fromEntries(
+      Object.entries(s.livingOverrides && typeof s.livingOverrides === 'object' ? s.livingOverrides : {})
+        .filter(([k, v]) => isValidDate(k) && Number.isFinite(Number(v)))
+        .map(([k, v]) => [k, int(v)]),
+    ),
     // 실제로 받은 월급을 그 달만 적어 둔 것 { 월급 주기 시작일: 금액 }
     salaryOverrides: Object.fromEntries(
       Object.entries(s.salaryOverrides && typeof s.salaryOverrides === 'object' ? s.salaryOverrides : {})
@@ -162,6 +168,7 @@ export function createSampleState(today) {
     living: 1200000,
     salaryOverrides: {},
     fixedOverrides: {},
+    livingOverrides: {},
   };
   const { y } = parseDate(today);
   const yearEnd = `${y}-12-20` > addDays(today, 14) ? `${y}-12-20` : `${y + 1}-12-20`;
