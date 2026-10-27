@@ -38,6 +38,7 @@ test('복원할 때 이상한 값은 걸러낸다', () => {
     savings: 2,
     living: 0,
     fixedOverrides: {},
+    livingOverrides: {},
     salaryOverrides: {},
   });
   assert.equal(s.plans.length, 1);

@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.27-2';
+const VERSION = '2026.10.27-3';
 
 const today = () => C.todayStr();
 
@@ -505,7 +505,7 @@ function monthRow(m, b) {
             <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>지갑 속 돈</span></span>
             <b class="num ${m.canUse < 0 ? 'neg' : ''}">${won(m.canUse)}</b>
           </li>
-          ${billRow('생활비', m.living)}
+          ${billRow('생활비', m.living, { sub: m.livingEdited ? `이 달만 고침 · 기본 ${won(b.livingBase)}` : '' })}
           ${billRow('계획', m.reserve)}
           ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
           ${m.shortfall ? billRow('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
@@ -522,7 +522,7 @@ function monthRow(m, b) {
                 .join(', ')}</span></p>`
             : ''
         }
-        <button type="button" class="chip-btn mr-edit" data-action="edit-salary" data-start="${m.start}">${icon('pencil')}이 달 월급·고정지출 고치기</button>
+        <button type="button" class="chip-btn mr-edit" data-action="edit-salary" data-start="${m.start}">${icon('pencil')}이 달 월급·고정지출·생활비 고치기</button>
       </div>
     </details>`;
 }
@@ -1033,6 +1033,7 @@ function salarySheetHTML(start) {
   const s = state.settings;
   const m = C.monthBudget(state, today()).months.find((x) => x.start === start);
   const salaryEdited = typeof s.salaryOverrides?.[start] === 'number';
+  const livingEdited = typeof s.livingOverrides?.[start] === 'number';
   const items = C.fixedItemsFor(s, start);
   return `
     <div class="sheet-head">
@@ -1066,6 +1067,11 @@ function salarySheetHTML(start) {
              </fieldset>`
           : ''
       }
+      <div class="field">
+        <label class="field-label" for="month-living">이 달 생활비</label>
+        ${moneyField('month-living', C.livingFor(s, start))}
+        <span class="field-hint">줄인 만큼 계획·저금통으로 가요. 예: 다음 달 투자할 돈 더 모으기 · 기본 ${won(s.living)}${livingEdited ? ' · <b>이 달만 고침</b>' : ''}</span>
+      </div>
       <div class="rec-actions">
         <button type="button" class="btn btn-ghost" data-salary-reset>모두 기본으로</button>
         <button type="submit" class="btn btn-primary">저장</button>
@@ -1079,6 +1085,8 @@ function bindSalarySheet(body, start) {
   const input = form.querySelector('#month-salary');
   const $total = form.querySelector('#month-fixed-total');
   let salary = C.salaryFor(s, start);
+  let living = C.livingFor(s, start);
+  bindMoney(form.querySelector('#month-living'), (v) => (living = v));
   const fixed = Object.fromEntries(C.fixedItemsFor(s, start).map((it) => [it.id, it.amount]));
   const updateTotal = () => {
     if ($total) $total.textContent = `합계 ${won(Object.values(fixed).reduce((a, v) => a + v, 0))}`;
@@ -1096,16 +1104,19 @@ function bindSalarySheet(body, start) {
   const save = (reset) => {
     const salaryOverrides = { ...(s.salaryOverrides || {}) };
     const fixedOverrides = { ...(s.fixedOverrides || {}) };
+    const livingOverrides = { ...(s.livingOverrides || {}) };
     delete salaryOverrides[start];
     delete fixedOverrides[start];
+    delete livingOverrides[start];
     if (!reset) {
       if (salary !== s.salary) salaryOverrides[start] = salary;
+      if (living !== s.living) livingOverrides[start] = living;
       const changed = Object.fromEntries(
         s.fixedItems.filter((it) => fixed[it.id] !== it.amount).map((it) => [it.id, fixed[it.id]]),
       );
       if (Object.keys(changed).length) fixedOverrides[start] = changed;
     }
-    commit({ ...state, settings: { ...s, salaryOverrides, fixedOverrides } });
+    commit({ ...state, settings: { ...s, salaryOverrides, fixedOverrides, livingOverrides } });
     closeSheet();
   };
   form.addEventListener('submit', (e) => {
