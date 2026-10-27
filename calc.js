@@ -408,6 +408,9 @@ export function monthBudget(state, today) {
     have,
     // 지금 남은 돈 중에서 떼어 둘 돈: 남은 생활비, 계획에 아직 모을 돈, 기한인데 못 모은 돈
     livingKeep,
+    // 지갑 속 돈이 모자라 생활비가 줄어든 만큼 반영한 이번 달 생활비와 그중 남은 돈
+    livingBudget: s.living - now.livingLack,
+    livingUsable: spent.livingLeft - now.livingLack,
     keep: have - livingKeep - now.shortfall - now.left,
     // 이번 달 남는 돈 (저축할 돈) = 지금 남은 돈 - 떼어 둘 돈
     free: now.left,
