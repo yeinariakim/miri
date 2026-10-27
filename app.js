@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.26-3';
+const VERSION = '2026.10.27-1';
 
 const today = () => C.todayStr();
 
@@ -211,7 +211,7 @@ function viewHome() {
     </header>
 
     <section class="hero" aria-labelledby="hero-label">
-      <p class="hero-label" id="hero-label">지금 남은 돈 <span class="hero-tag">${now.label} 월급에서</span></p>
+      <p class="hero-label" id="hero-label">지갑에 남은 돈 <span class="hero-tag">${now.label} 월급에서</span></p>
       <p class="hero-amount num ${haveNeg ? 'neg' : ''} ${sizeClass(haveText)}">${haveText}</p>
       ${
         b.salary
@@ -219,7 +219,7 @@ function viewHome() {
                <li><span>생활비 남은 돈</span><span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span></li>
                ${
                  b.keep
-                   ? `<li><span>이번 달 모을 돈${keepNames ? `<small>${keepNames}</small>` : ''}</span><b class="num">${won(b.keep)}</b></li>`
+                   ? `<li><span>이번 달 계획${keepNames ? `<small>${keepNames}</small>` : ''}</span><b class="num">${won(b.keep)}</b></li>`
                    : ''
                }
              </ul>
@@ -234,11 +234,11 @@ function viewHome() {
                  ${sp.out ? heroRow('이번 달 쓴 돈', sp.out) : ''}
                  ${sp.fromPrior ? heroRow('계획에 모아 둔 돈에서', sp.fromPrior, '+') : ''}
                  ${sp.income ? heroRow('들어온 돈', sp.income, '+') : ''}
-                 <li class="hero-free"><span>= 지금 남은 돈</span><b class="num">${haveText}</b></li>
+                 <li class="hero-free"><span>= 지갑에 남은 돈</span><b class="num">${haveText}</b></li>
                  ${heroRow('생활비 남은 돈', b.livingKeep)}
-                 ${b.keep ? heroRow('이번 달 모을 돈', b.keep) : ''}
+                 ${b.keep ? heroRow('이번 달 계획', b.keep) : ''}
                  ${now.shortfall ? heroRow('기한인데 못 모은 돈', now.shortfall) : ''}
-                 <li class="hero-free"><span>= 더 저축할 돈</span>${leftCell(now)}</li>
+                 <li class="hero-free"><span>= 저금통</span>${leftCell(now)}</li>
                </ul>
              </details>`
           : `<button class="btn btn-primary btn-sm" data-action="open-settings">월급부터 입력하기</button>`
@@ -260,7 +260,7 @@ function viewHome() {
       next
         ? `<a class="card next-card" href="#/calendar">
              <span class="next-label">${next.label}</span>
-             <span class="next-vals num"><span>모을 돈 <b>${won(next.reserve)}</b></span><span>더 저축할 돈 ${leftCell(next)}</span></span>
+             <span class="next-vals num"><span>계획 <b>${won(next.reserve)}</b></span><span>저금통 ${leftCell(next)}</span></span>
              ${icon('chevronRight')}
            </a>`
         : ''
@@ -292,8 +292,8 @@ function splitBar(m, b) {
     { key: 'savings', label: '적금', v: b.savings },
     { key: 'spent', label: '쓴 돈', v: Math.max(0, b.spent.out - b.spent.fromPrior) },
     { key: 'living', label: '생활비 남음', v: b.livingKeep },
-    { key: 'reserve', label: '모으기', v: Math.max(0, b.keep) },
-    { key: 'free', label: '남음', v: Math.max(0, m.left) },
+    { key: 'reserve', label: '계획', v: Math.max(0, b.keep) },
+    { key: 'free', label: '저금통', v: Math.max(0, m.left) },
   ];
   const total = Math.max(m.salary, segs.reduce((a, x) => a + x.v, 0));
   const pct = (v) => (total ? (v / total) * 100 : 0);
@@ -443,11 +443,11 @@ function viewCalendar() {
     <header class="topbar">
       <div>
         <h1 class="page-title">월별</h1>
-        <p class="brand-sub">고정지출·적금 빼고 남은 돈으로 생활비와 저축</p>
+        <p class="brand-sub">지갑 속 돈을 생활비·계획·저금통으로</p>
       </div>
     </header>
     <section class="card month-table">
-      <div class="mt-head" aria-hidden="true"><span></span><span>모을 돈</span><span>더 저축할 돈</span></div>
+      <div class="mt-head" aria-hidden="true"><span></span><span>계획</span><span>저금통</span></div>
       ${b.months.map((m) => monthRow(m, b)).join('')}
     </section>
     ${pastSpends(b)}
@@ -478,7 +478,7 @@ function monthRow(m, b) {
   const sp = m.spent;
   const spentSubs = sp
     ? [
-        sp.other && ['그 외 지출', won(sp.other)],
+        sp.other && ['예상 밖 지출', won(sp.other)],
         sp.livingOver && ['생활비 초과', won(sp.livingOver)],
         sp.planExtra && ['계획보다 더 씀', won(sp.planExtra)],
         sp.income && ['들어온 돈', `+${won(sp.income)}`],
@@ -502,15 +502,15 @@ function monthRow(m, b) {
           ${m.hit ? billRow(m.hit > 0 ? '이번 달 지출' : '이번 달 더해진 돈', Math.abs(m.hit), { sign: m.hit > 0 ? '−' : '+' }) : ''}
           ${billSubs(spentSubs)}
           <li class="bill-row bill-subtotal">
-            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>쓸 수 있는 돈</span></span>
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>지갑 속 돈</span></span>
             <b class="num ${m.canUse < 0 ? 'neg' : ''}">${won(m.canUse)}</b>
           </li>
           ${billRow('생활비', m.living)}
-          ${billRow('모으기', m.reserve)}
+          ${billRow('계획', m.reserve)}
           ${billSubs(m.allocs.map((a) => [a.name, won(a.amount), a.id]))}
           ${m.shortfall ? billRow('기한인데 못 모은 돈', m.shortfall, { cls: 'bill-short' }) : ''}
           <li class="bill-row bill-total">
-            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>더 저축할 돈</span></span>
+            <span class="bill-label"><span class="bill-sign" aria-hidden="true">=</span><span>저금통</span></span>
             ${leftCell(m)}
           </li>
         </ul>
@@ -706,7 +706,7 @@ function viewForm(r) {
             : ''
         }
         <div class="pv-free">
-          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 더 저축할 돈</p>
+          <p class="pv-label">${editing ? '수정하면' : '추가하면'} 이번 달 저금통</p>
           <p class="pv-change num"><span>${won(pv.freeBefore)}</span>${icon('chevronRight')}<b class="${neg ? 'neg' : 'accent'}">${won(pv.freeAfter)}</b></p>
           ${neg ? `<p class="pv-warn">${icon('alertOctagon')}<span><b>모자라요</b> · 생활비를 줄여야 해요</span></p>` : ''}
         </div>`;
@@ -918,7 +918,7 @@ function spendSheetHTML() {
                         </select>
                         ${chosen ? `<span class="field-hint">모아 둔 돈에서 나가고, 이 계획은 '지출 완료'가 돼요.</span>` : ''}`
                      : `<span class="field-hint">준비 중인 계획이 없어요.</span>`
-                   : `<span class="field-hint">${d.source === 'living' ? '생활비에서 빠져요.' : '저축할 돈에서 바로 빠져요.'}</span>`
+                   : `<span class="field-hint">${d.source === 'living' ? '생활비에서 빠져요.' : '지갑 속 돈에서 바로 빠져요.'}</span>`
                }
              </fieldset>`
       }
@@ -1298,6 +1298,17 @@ function bindPlanSheet(body, id) {
 
 // --- 설정 ---
 
+const TERMS = [
+  ['꼭 나가는 돈', '고정지출과 적금. 무슨 일이 있어도 매달 나가요.'],
+  ['지갑 속 돈', '월급에서 꼭 나가는 돈을 빼고 이번 달 내 손에 있는 돈.'],
+  ['생활비', '지갑 속 돈 중 식비·교통비처럼 한 달 동안 쓰기로 정한 돈.'],
+  ['계획', '여행·선물처럼 미리 아는 큰 지출을 위해 이번 달 모아 둘 돈.'],
+  ['저금통', '생활비와 계획까지 빼고 남는 플러스 알파. 마이너스면 그만큼 생활비를 줄여야 해요.'],
+  ['예상 밖 지출', '계획에 없던 지출. 지갑 속 돈에서 바로 빠져요.'],
+  ['들어온 돈', '월급 말고 들어온 돈. 지갑 속 돈에 더해져요.'],
+  ['지갑에 남은 돈', '홈 화면의 큰 숫자. 지갑 속 돈에서 지금까지 쓴 돈을 뺀, 지금 실제로 남은 돈.'],
+];
+
 function settingsSheetHTML() {
   const s = state.settings;
   const sampleCount = state.plans.filter((p) => p.sample).length;
@@ -1343,6 +1354,14 @@ function settingsSheetHTML() {
     </form>
 
     <section class="settings-section">
+      <h3 class="sub-title">용어 설명</h3>
+      <p class="terms-flow">월급 − 꼭 나가는 돈 = <b>지갑 속 돈</b><br>지갑 속 돈 = 생활비 + 계획 + 저금통</p>
+      <dl class="terms">
+        ${TERMS.map(([t, d]) => `<div><dt>${t}</dt><dd>${d}</dd></div>`).join('')}
+      </dl>
+    </section>
+
+    <section class="settings-section">
       <h3 class="sub-title">백업</h3>
       <p class="field-hint">데이터는 이 브라우저에만 저장돼요. 기기를 바꾸거나 브라우저 데이터를 지우기 전에 내보내 두세요.</p>
       <div class="rec-actions">
@@ -1376,7 +1395,7 @@ function bindSettingsSheet(body) {
     const fixed = C.fixedTotal(vals);
     $fixedTotal.textContent = `합계 ${won(fixed)}`;
     const left = vals.salary - fixed - vals.savings - vals.living;
-    $sum.innerHTML = `매달 모으기·저축에 쓸 수 있는 돈 <b class="num ${left < 0 ? 'neg' : ''}">${won(left)}</b>`;
+    $sum.innerHTML = `매달 계획·저금통에 쓸 수 있는 돈 <b class="num ${left < 0 ? 'neg' : ''}">${won(left)}</b>`;
   };
 
   function renderFixed(focus) {

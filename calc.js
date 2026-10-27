@@ -249,7 +249,7 @@ export function monthlyCapacity(settings, start) {
 //   계획:   그 계획에 모아 둔 돈에서 나간다. 더 쓰면 차이만 남는 돈에서 빠지고, 덜 쓰면 남은 돈이 돌아온다.
 //   그 외:  계획에 없던 큰 돈. 남는 돈에서 바로 빠진다.
 //   들어온 돈: 남는 돈에 더해진다.
-export const SOURCES = { living: '생활비', plan: '계획', other: '그 외', income: '들어온 돈' };
+export const SOURCES = { living: '생활비', plan: '계획', other: '예상 밖', income: '들어온 돈' };
 
 export function spendSummary(state, start, end) {
   const s = state.settings;

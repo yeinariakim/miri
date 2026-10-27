@@ -2646,3 +2646,31 @@ select.input {
 .mr-body .hero-short {
   font-size: 13px;
 }
+
+/* 설정: 용어 설명 */
+.terms-flow {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.terms {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.terms dt {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.terms dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
