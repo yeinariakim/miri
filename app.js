@@ -9,7 +9,7 @@ const $tabbar = document.getElementById('tabbar');
 const $toast = document.getElementById('toast');
 
 // 설정 맨 아래에 보이는 버전. 화면이 안 바뀌면 이 값으로 새 버전을 받았는지 확인한다.
-const VERSION = '2026.10.27-1';
+const VERSION = '2026.10.27-2';
 
 const today = () => C.todayStr();
 
@@ -216,7 +216,7 @@ function viewHome() {
       ${
         b.salary
           ? `<ul class="hero-bill hero-main">
-               <li><span>생활비 남은 돈</span><span class="num"><b class="${sp.livingLeft < 0 ? 'neg' : ''}">${won(sp.livingLeft)}</b> <span class="muted">/ ${won(b.living)}</span></span></li>
+               <li><span>생활비 남은 돈</span><span class="num"><b class="${b.livingUsable < 0 ? 'neg' : ''}">${won(b.livingUsable)}</b> <span class="muted">/ ${won(b.livingBudget)}</span></span></li>
                ${
                  b.keep
                    ? `<li><span>이번 달 계획${keepNames ? `<small>${keepNames}</small>` : ''}</span><b class="num">${won(b.keep)}</b></li>`

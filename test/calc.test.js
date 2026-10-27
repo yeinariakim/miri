@@ -571,3 +571,16 @@ test('더 저축할 돈이 마이너스면 고정지출·적금은 그대로, �
   assert.equal(now.livingLack, 1200000);
   assert.equal(now.overLack, 600000);
 });
+
+test('지갑 속 돈이 모자라면 홈의 생활비 남은 돈도 그만큼 줄어든다', () => {
+  const today = '2026-10-26';
+  // 생활비 1,200,000 중 300,000 줄이기 → 900,000, 그중 100,000 씀
+  const b = monthBudget({ settings, plans: [], spends: [spend('수리', 1000000), spend('밥', 100000, 'living')] }, today);
+  assert.equal(b.livingBudget, 900000);
+  assert.equal(b.livingUsable, 800000);
+  assert.equal(b.livingUsable, b.have); // 홈 큰 숫자와 같다
+  // 넉넉한 달은 그대로
+  const ok = monthBudget({ settings, plans: [], spends: [spend('밥', 100000, 'living')] }, today);
+  assert.equal(ok.livingBudget, 1200000);
+  assert.equal(ok.livingUsable, 1100000);
+});
